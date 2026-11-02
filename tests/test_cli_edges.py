@@ -68,13 +68,13 @@ class CliEdges(unittest.TestCase):
         self.assertTrue(any('no normative keyword' in w for w in result['warnings']))
 
     def test_fenced_conflict_example_is_informative(self):
-        self.write('behavior.md', clause(body='''The system MUST count.
+        self.write('behavior.md', clause(body=f'''The system MUST count.
 ````markdown
-<<<<<<< HEAD
+{'<' * 7} HEAD
 Count to 10.
-=======
+{'=' * 7}
 Count to 20.
->>>>>>> other
+{'>' * 7} other
 ````
 '''))
         result = self.data('check')
