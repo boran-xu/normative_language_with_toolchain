@@ -4,7 +4,7 @@ from pathlib import Path
 import re
 import sys
 import uuid
-from .core import load, manifest, validate
+from .core import load, manifest, validate, reference_ids
 from .history import History, change, changelog
 from .graph import trace as trace_graph, render_trace
 
@@ -54,8 +54,9 @@ def main(argv=None):
             (root / 'ndf.yaml').write_text(json.dumps({'project': root.name, 'id-prefixes': ['SYS', 'VER', 'D', 'Q'], 'layers': {'L0': 'intent', 'L1': 'contract', 'L2': 'mechanism', 'L3': 'executable'}}, indent=2) + '\n')
             emit({'created': str(root)}, args.json)
             return 0
-        config = manifest(root)
-        clauses = load(root)
+        historical = args.command in ('log', 'diff')
+        config = {} if historical else manifest(root)
+        clauses = [] if historical else load(root)
         if args.command == 'new-id':
             if not any(args.prefix == p or args.prefix.startswith(p + '-') for p in config['id-prefixes']):
                 raise ValueError('prefix is not declared in ndf.yaml')
@@ -66,7 +67,6 @@ def main(argv=None):
             emit({'id': cid} if args.json else [cid], args.json)
             return 0
         # Historical queries remain usable even with a broken worktree.
-        historical = args.command in ('log', 'diff')
         errors, warnings = ([], []) if historical else validate(clauses, root, config)
         if args.command == 'check':
             if args.since:
@@ -91,7 +91,7 @@ def main(argv=None):
             models = root / 'models'
             if not models.is_dir() or not list(models.rglob('test*.py')):
                 raise ValueError('no model tests found under models/')
-            return subprocess.run([sys.executable, '-m', 'unittest', 'discover', '-s', str(models), '-v'], cwd=root).returncode
+            return subprocess.run([sys.executable, str(Path(__file__).with_name('model_runner.py')), str(models)], cwd=root).returncode
         elif args.command == 'export':
             from dataclasses import asdict
             emit([asdict(c) for c in clauses], True)
@@ -103,7 +103,7 @@ def main(argv=None):
                         if key == 'verifies':
                             links.setdefault(target, []).append(c.id)
             must = [c.id for c in clauses if c.active() and c.meta.get('layer') == 'L1' and c.meta.get('level') == 'must' and c.meta.get('kind') != 'info']
-            questions = [c.id for c in clauses if c.meta.get('kind') == 'question' and c.meta.get('status', 'open') not in ('resolved', 'closed')]
+            questions = [c.id for c in clauses if c.active() and c.meta.get('kind') == 'question' and c.meta.get('status', 'open') not in ('resolved', 'closed')]
             result = {'L1_must': len(must), 'linked': len([cid for cid in must if cid in links]),
                       'unverified': sorted(cid for cid in must if cid not in links),
                       'verification_links': links, 'open_questions': questions,
@@ -118,8 +118,19 @@ def main(argv=None):
         elif args.command == 'options':
             emit([{'id': c.id, **c.meta} for c in clauses if c.meta.get('kind') == 'option'], args.json)
         elif args.command == 'deps':
-            external = {c.id for c in clauses if c.path.startswith(args.path)}
-            emit([{'id': c.id, 'target': target, 'type': key, 'origin': index[target].meta.get('origin')} for c in clauses if c.id not in external for key, target in list(c.edges()) + [('mention', r.strip()) for r in c.refs] if target in external], args.json)
+            prefix = args.path.rstrip('/')
+            if Path(prefix).is_absolute() or '..' in Path(prefix).parts:
+                raise ValueError('dependency path must be relative to the spec root')
+            external = {c.id for c in clauses if c.path == prefix or c.path.startswith(prefix + '/')}
+            rows = set()
+            for c in clauses:
+                if c.id in external:
+                    continue
+                edges = list(c.edges())
+                edges.extend(('mention', target) for ref in c.refs for target in reference_ids(ref, clauses))
+                rows.update((c.id, key, target) for key, target in edges if target in external)
+            emit([{'id': cid, 'target': target, 'type': key, 'origin': index[target].meta.get('origin')}
+                  for cid, key, target in sorted(rows)], args.json)
         elif args.command == 'trace':
             rows = trace_graph(clauses, args.id)
             emit(rows if args.json else render_trace(rows), args.json)

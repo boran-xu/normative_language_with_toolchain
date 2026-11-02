@@ -13,7 +13,10 @@ def git(repo, *args):
 
 class History:
     def __init__(self, root):
-        self.repo = Path(git(root, 'rev-parse', '--show-toplevel').decode().strip())
+        existing = root.resolve()
+        while not existing.exists():
+            existing = existing.parent
+        self.repo = Path(git(existing, 'rev-parse', '--show-toplevel').decode().strip())
         self.prefix = root.resolve().relative_to(self.repo.resolve()).as_posix()
         if self.prefix == '.':
             self.prefix = ''

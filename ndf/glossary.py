@@ -1,5 +1,6 @@
 """Advisory terminology checks on ordinary prose; no semantic inference."""
 import re
+from .markdown import without_inline_code
 
 WORDS = re.compile(r'[A-Za-z][A-Za-z0-9]*(?:[-/][A-Za-z0-9]+)*')
 IGNORED = set('MUST SHALL SHOULD MAY NOT TBD DSE TODO The A An When If Then Each Every All Any No On In At By For From To With Without While After Before This That These Those It Its See As And Or But Given Unless Whether'.split())
@@ -21,7 +22,7 @@ def prose(text, keep_emphasis=False):
             lines.append(line)
     value = '\n'.join(lines)
     value = re.sub(r'<!--[\s\S]*?-->', '', value)
-    value = re.sub(r'(`+).*?\1', '', value)
+    value = without_inline_code(value)
     value = re.sub(r'\[\[[^]]*\]\]', '', value)
     value = re.sub(r'\[([^]]+)\]\([^)]*\)', r'\1', value)
     return value if keep_emphasis else value.replace('**', '').replace('__', '')

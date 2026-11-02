@@ -1,0 +1,33 @@
+{
+  "pin": "950d76b022d368497c92b0d0d138f0c973c3d8a1",
+  "refs": {
+    "invalid/conflict-markers": "afe06a091979238947408fcf0ff6379c69d5505f",
+    "invalid/dangling": "ccd1d742de93c9be260248d0655b81a2d641974c",
+    "invalid/duplicate": "b962507817d618e8b304ef0bb1fa1e8fa7f7826a",
+    "invalid/metadata": "8c45a8bfafb5b7dcdbf5f0b9c5e2dc534d3159ca",
+    "invalid/refinement-cycle": "43832e5a3e40b446465a9f93ca647ecd76824c3e",
+    "scenario/clean-main": "78c381ec80f1eef9870b1291827881c04383b5fc",
+    "scenario/clean-merge": "950d76b022d368497c92b0d0d138f0c973c3d8a1",
+    "scenario/clean-side": "c78dbd87e9daad090edfb7354de738e607ee717a",
+    "scenario/conflict-main": "436e46b0d87cb34971865aa4fccca1b83a51486a",
+    "scenario/conflict-resolved": "43c1ac9902686664e0e9dbcc085f793870f16aae",
+    "scenario/conflict-side": "5c412c2575823c2dc3f7aec065672b03e1fdf67a",
+    "scenario/delete-note": "f6002de747db0ed8e917305283a74b668191960c",
+    "scenario/dependency-cycle": "118f00986578e9fccfd720155faa8a357b2f95eb",
+    "scenario/known-conflict": "aef864e31a5d95c71f45e054b93184a24b82837f",
+    "scenario/match-main": "760b842a226ff4f47fa19eb3b099b763f7da3e4a",
+    "scenario/match-main-main": "673072b5fdb4c8628687f31f65065420c93a6ca2",
+    "scenario/match-main-side": "beb2fd8745c2fb1b7ac13f4a65528d26946f4bd5",
+    "scenario/match-side": "fa9a934ecff7ace07299c295b216c4381f9b0cfb",
+    "scenario/match-side-main": "2221577584b39de13749fb512cc5c35c4c32f6b0",
+    "scenario/match-side-side": "7630e5244425dc109f0064c5121c793741929e73",
+    "scenario/restore-note": "710f399b547d16145b350209c7da3b7e0bedcc9d",
+    "tests/failing": "6e2ab13898ec95abe95f6365097e5317cf40d335",
+    "tests/missing": "19f89b9067aa8b3963d6af14140a573a8f151b64",
+    "v0.1": "0b1f564fa52395f13a25eee4e6ea36d5d246f236",
+    "v0.2": "31fcc1f3d7de5d2dfbf8442b9a9b9334b84eab68",
+    "v0.3": "cd1409d02166442f04b5809e5c1e3df9664c20ca",
+    "v0.4": "cc179b13110176fcd973f1354a689407cbf3e9a0",
+    "v1.0": "950d76b022d368497c92b0d0d138f0c973c3d8a1"
+  }
+}

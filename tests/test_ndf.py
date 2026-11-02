@@ -3,6 +3,7 @@ import io
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -99,9 +100,12 @@ MUST pass.
         models.mkdir()
         test = models / 'test_model.py'
         test.write_text('import unittest\nclass Acceptance(unittest.TestCase):\n def test_VER_001(self): self.assertEqual(1 + 1, 2)\n')
-        self.assertEqual(self.run_cli('test')[0], 0)
+        result = subprocess.run([sys.executable, str(Path(__file__).resolve().parents[1] / 'ndf.py'), '--root', str(self.root), 'test'], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
         test.write_text('import unittest\nclass Acceptance(unittest.TestCase):\n def test_VER_001(self): self.fail("SYS-001 violated")\n')
-        self.assertEqual(self.run_cli('test')[0], 1)
+        result = subprocess.run([sys.executable, str(Path(__file__).resolve().parents[1] / 'ndf.py'), '--root', str(self.root), 'test'], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('SYS-001 violated', result.stderr)
 
     def test_init_and_ids(self):
         newroot = self.root / 'new'

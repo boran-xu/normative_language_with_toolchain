@@ -4,6 +4,7 @@ from pathlib import Path
 import json
 import re
 import shlex
+from .markdown import without_inline_code
 
 HEADING = re.compile(r'^(#{1,6})\s+(.*?)\s*$')
 ANCHOR = re.compile(r'\{#([A-Za-z][\w.-]*)\}\s*$')
@@ -85,7 +86,7 @@ def parse(text, path):
                 except ValueError as exc:
                     current.errors.append(str(exc))
             else:
-                current.refs.extend(re.findall(r'\[\[([^]|]+)(?:\|[^]]*)?\]\]', line))
+                current.refs.extend(re.findall(r'\[\[([^]|]+)(?:\|[^]]*)?\]\]', without_inline_code(line)))
                 lines.append(line)
     finish()
     return clauses
@@ -143,10 +144,23 @@ def resolve(target, clauses, root):
     return False
 
 
+def reference_ids(target, clauses):
+    """Resolve a mention to clause IDs, including whole-file projections."""
+    target = target.strip()
+    if any(c.id == target for c in clauses):
+        return [target]
+    path, _, anchor = target.partition('#')
+    if Path(path).is_absolute() or '..' in Path(path).parts:
+        return []
+    return sorted(c.id for c in clauses if c.path in (path, path + '.md')
+                  and (not anchor or c.id == anchor))
+
+
 def validate(clauses, root, config):
+    from .glossary import prose as visible_prose
     errors, warnings, index = [], [], {}
     for path in root.rglob('*.md'):
-        if re.search(r'(?m)^(<{7}|={7}|>{7})(?: |$)', path.read_text(encoding='utf-8')):
+        if re.search(r'(?m)^(<{7}|={7}|>{7})(?: |$)', visible_prose(path.read_text(encoding='utf-8'))):
             errors.append(f'{path.relative_to(root)}: unresolved Git conflict marker')
     kinds = {'req', 'def', 'arch', 'constraint', 'option', 'verif', 'info', 'decision', 'question'}
     layers = config.get('layers', {'L0': 'intent', 'L1': 'contract', 'L2': 'mechanism', 'L3': 'executable'})
@@ -167,7 +181,7 @@ def validate(clauses, root, config):
                 errors.append(f'{loc}: missing or invalid layer')
         # Keywords in rationale or example code do not establish an obligation.
         prose = '\n'.join(l for l in c.body.splitlines() if not l.lstrip().startswith('>'))
-        prose = re.sub(r'(?ms)^\s*(`{3,}|~{3,}).*?^\s*\1\s*$', '', prose)
+        prose = visible_prose(prose)
         if c.meta.get('kind') == 'req' and not re.search(r'\b(MUST|SHALL|SHOULD|MAY)\b', prose):
             warnings.append(f'{loc}: requirement has no normative keyword')
         if c.meta.get('kind') == 'info' and re.search(r'\b(MUST|SHALL)\b', prose):
@@ -181,6 +195,8 @@ def validate(clauses, root, config):
         status = c.meta.get('status')
         if status and status not in {'draft', 'stable', 'deprecated', 'open', 'closed', 'resolved'} and not status.startswith('superseded-by='):
             errors.append(f'{loc}: invalid status {status}')
+        if (status and status.startswith('superseded-by=') and not status.split('=', 1)[1].strip()) or ('superseded-by' in c.meta and not c.meta['superseded-by'].strip()):
+            errors.append(f'{loc}: empty supersession target')
         if c.meta.get('kind') == 'question' and status in {'closed', 'resolved'} and not c.resolution():
             warnings.append(f'{loc}: closed question has no resolution')
         for target in c.refs:

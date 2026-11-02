@@ -44,7 +44,7 @@ Coverage counts *all* active L1 must clauses except `info`, including definition
 and constraints. It measures specified verification links, not passing tests.
 Model tests run only when explicitly requested by `test`; `check` never executes
 project code. Model tests should reference verification/requirement IDs in names
-or assertion messages. `test` fails if no tests exist. See the toy project's README
+or assertion messages. `test` fails if no tests exist or discovery executes zero tests. See the toy project's README
 for its intentionally incomplete coverage and executable acceptance tests.
 
 ## Authoring
@@ -66,6 +66,10 @@ ordinary deeper headings remain inside a clause. Metadata may span multiple
 one-line comments. Quote values containing spaces. References use `[[ID]]`,
 `[[ID | label]]`, `[[decisions/D-001]]` or `[[path.md#CLAUSE-ID]]`.
 Fenced code is preserved but never interpreted as headings, metadata or links.
+Inline-code examples do not create references or establish normative keywords.
+Conflict markers inside fenced examples are ignored. `deps` resolves ID,
+file-and-anchor, and whole-file references; directory filters respect path
+boundaries (`refs` does not match `refs-old`).
 File anchors must be NDF clause IDs, not generated Markdown heading slugs.
 External standard section references must be projected into actual clauses/files;
 unresolved pointers intentionally fail validation.
@@ -154,8 +158,8 @@ Use `log --all` to include unmerged branches reachable from local refs. A normal
 `log` includes ancestors of the selected ref only. Shallow clones only provide
 history present locally; fetch full history for complete reports. Snapshots with
 duplicate IDs fail explicitly rather than arbitrarily choosing one clause.
-Historical queries ignore current validation errors, but still require an existing
-manifest. History is deliberately simple and scans snapshots; large repositories
+Historical queries read Git snapshots independently of the current manifest and
+Markdown, even if the current spec directory is missing. History is deliberately simple and scans snapshots; large repositories
 may benefit from a future persistent cache.
 
 ## Limits and verification
@@ -172,9 +176,17 @@ Executable models can test encoded behavior, not the adequacy of prose contracts
 Run the tool regressions and the independent toy project's acceptance tests:
 
 ```sh
+python3 tools/bootstrap_history.py
 python3 -m unittest discover -s tests -v
 python3 ndf.py --root examples/chrono/spec test
 ```
+
+The [history fixture](tests/fixtures/README.md) is a real pinned Git submodule,
+backed by a tracked cloneable bundle for offline setup. It contains 28 named
+snapshots and a realistic development graph. Integration tests use independent
+expected answers and mutate only temporary clones. Bootstrap fetches the full
+branch/tag history; it never changes global Git protocol settings. The CI runs
+bootstrap before the complete suite.
 
 Git regressions create disposable repositories and exercise divergent edits,
 conflicting and clean merges, resolutions matching one/both parents, unmerged
