@@ -219,4 +219,6 @@ def validate(clauses, root, config):
         visited.add(cid)
     for cid in index:
         visit(cid)
+    from .glossary import warnings as glossary_warnings
+    warnings.extend(glossary_warnings(clauses, config))
     return errors, warnings

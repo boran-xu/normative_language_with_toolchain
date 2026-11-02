@@ -5,7 +5,8 @@ import re
 import sys
 import uuid
 from .core import load, manifest, validate
-from .history import History, change
+from .history import History, change, changelog
+from .graph import trace as trace_graph, render_trace
 
 
 def emit(value, as_json):
@@ -120,28 +121,8 @@ def main(argv=None):
             external = {c.id for c in clauses if c.path.startswith(args.path)}
             emit([{'id': c.id, 'target': target, 'type': key, 'origin': index[target].meta.get('origin')} for c in clauses if c.id not in external for key, target in list(c.edges()) + [('mention', r.strip()) for r in c.refs] if target in external], args.json)
         elif args.command == 'trace':
-            if args.id not in index:
-                raise ValueError('unknown clause ' + args.id)
-            rows, seen = [], set()
-            def walk(cid, depth):
-                if cid in seen:
-                    rows.append('  ' * depth + cid + ' (already shown)')
-                    return
-                seen.add(cid)
-                c = index[cid]
-                rows.append('  ' * depth + f'{cid} [{c.meta.get("layer", "-")}] {c.title}')
-                for source in clauses:
-                    for key, target in source.edges():
-                        if target == cid and key in ('refines', 'verifies'):
-                            if key == 'refines':
-                                walk(source.id, depth + 1)
-                            else:
-                                rows.append('  ' * (depth + 1) + 'verified by ' + source.id)
-                for key, target in c.edges():
-                    if key != 'refines':
-                        rows.append('  ' * (depth + 1) + f'{key}: {target}')
-            walk(args.id, 0)
-            emit(rows, args.json)
+            rows = trace_graph(clauses, args.id)
+            emit(rows if args.json else render_trace(rows), args.json)
         elif args.command == 'log':
             emit(History(root).events(args.id, args.ref, args.all), args.json)
         elif args.command == 'diff':
@@ -150,7 +131,7 @@ def main(argv=None):
             a, b = args.range.split('..')
             history = History(root)
             before, after = history.snapshot(a), history.snapshot(b)
-            emit([{'id': cid, 'change': kind, 'before': before[cid].path if cid in before else None, 'after': after[cid].path if cid in after else None, 'metadata_before': before[cid].meta if cid in before else None, 'metadata_after': after[cid].meta if cid in after else None} for cid in sorted(set(before) | set(after)) if (kind := change(before.get(cid), after.get(cid)))], args.json)
+            emit(changelog(before, after), args.json)
         return 0
     except (ValueError, OSError, UnicodeError, RecursionError) as exc:
         print(f'ndf: {exc}', file=sys.stderr)

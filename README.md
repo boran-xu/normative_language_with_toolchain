@@ -28,15 +28,15 @@ The `test` command returns the test process exit code.
 | --- | --- |
 | `init` | Create directories and a JSON-syntax `ndf.yaml`; never overwrite a manifest |
 | `new-id SYS-AREA` | Generate an ID under a declared prefix |
-| `check` | Check duplicate IDs, metadata, references, model paths, refinement layers/cycles, options; warn about keyword misuse, ambiguous wording and known conflicts |
+| `check` | Check duplicate IDs, metadata, references, model paths, refinement layers/cycles, options; warn about keyword misuse, ambiguous wording, glossary drift and known conflicts |
 | `check --since COMMIT` | Additionally flag refinement pairs whose clauses changed relative to a Git snapshot |
-| `trace ID` | Show descendants, verification backlinks and outgoing typed edges |
+| `trace ID` | Recursively traverse refinements and dependencies, showing typed links and verification backlinks |
 | `coverage` | Count L1 must clauses and their active verification links, TBDs, questions, options, DSE markers and recorded conflicts |
 | `status` | Coverage plus question status, blocked clauses, resolution and body |
 | `options` | List design options and their metadata, including defaults/ranges/couplings |
 | `deps [refs/]` | List local mentions/typed edges into the reference subtree, with source provenance |
 | `log ID [--ref HEAD] [--all]` | Clause changes across every reachable parent, including merges and file moves; optionally include all local refs |
-| `diff A..B` | Compare clause snapshots: additions, deletions, moves and content/metadata changes |
+| `diff A..B` | Clause changelog: lifecycle, formatting/content, edges, metadata, text patches and census deltas |
 | `export` | JSON clause records, including metadata, text, references and locations |
 | `test` | Execute Python unittest discovery in `models/` using the current Python interpreter |
 
@@ -81,6 +81,57 @@ the tree. Missing status/since are permitted to match the proposal's examples.
 ladder. See the example for a complete manifest. Code paths are relative to the
 spec root. Lint warnings are advisory; structural errors block the check.
 
+## Glossary checks
+
+`check` reads active or historical `kind=def` clauses anywhere under the spec
+root. A definition heading supplies a term; the proposal's list syntax
+`- **running / stopped** — ...` supplies two separately defined terms. Simple
+explicit prose such as `BCD means ...` also supplies a term. No special term-link
+syntax is required. Matching is case-insensitive.
+
+Use ordinary glossary prose to declare synonyms:
+
+```markdown
+## frame {#DEF-FRAME-001}
+<!-- ndf: kind=def level=must layer=L1 -->
+
+An Ethernet transmission unit.
+Synonyms: packet, datagram
+```
+
+Occurrences of `packet` or `datagram` in other clauses then produce advisory
+warnings recommending `frame`. Alternatively, set a `glossary.synonyms` mapping
+in `ndf.yaml`, e.g. `{"glossary": {"synonyms": {"packet": "frame"}}}` alongside
+the existing manifest keys. Synonym relations are explicit data; the checker
+does not infer them from arbitrary prose.
+
+Undefined capitalized words and acronyms produce glossary warnings. Known terms
+are matched as phrases, common sentence starters and normative keywords are
+excluded, and sentence-initial capitalization alone does not trigger a warning
+(except acronyms). Fenced/inline code, metadata and clause-ID references are
+excluded. This is an advisory capitalization heuristic: it can miss terms or
+flag ordinary words. It does not assess whether a defined term is used correctly.
+
+## Graph tracing and clause diffs
+
+`trace` follows incoming `refines` edges down to more detailed clauses and outgoing
+`depends-on` edges recursively. At every visited clause it lists incoming
+`verifies` links and other outgoing typed edges. Plain mentions are not traversed.
+A repeated node is marked `already shown` and is not expanded again, whether
+encountered through a cycle or a shared dependency. The traversal is iterative,
+so long dependency chains do not hit Python's recursion limit. `--json` returns
+records with IDs, source, relation, depth, repetition marker and verification links.
+
+`diff A..B` retains its original `change` field and adds `categories`: added,
+deleted, modified, formatting-only, moved, deprecated and superseded (multiple
+categories can apply). The formatting rule ignores prose whitespace/wrapping and
+reordering of typed-edge targets; code whitespace is preserved. This is a
+syntactic classification, not a judgment about changed meaning. Metadata deltas,
+added/removed typed edges and mentions, title changes, unified body patches and
+per-clause TBD/open-option/open-question census deltas are included. Results are
+sorted by clause ID and compare the exact two snapshots, regardless of whether
+their commits are on the same branch.
+
 ## IDs and branch history
 
 IDs use a UUID4 suffix, e.g. `SYS-ADM-4d21…` (32 hexadecimal characters).
@@ -112,10 +163,10 @@ may benefit from a future persistent cache.
 There is no proof or automatic detection of contradictions in natural language.
 `check --since` produces **review flags**, even for textually clean merges; it
 compares the current tree with the selected commit, including removed edges.
-Choose a pre-merge baseline to review an integrated change. Semantic review,
-glossary synonym analysis, automatic reconciliation, HTML/PDF publishing and
-reference ingestion are deferred. `diff` compares parsed content and metadata;
-it does not decide whether differently worded prose means the same thing.
+Choose a pre-merge baseline to review an integrated change. HTML/PDF publishing
+and reference ingestion are deferred. All tools use deterministic rules; prose
+interpretation and reconciliation are the responsibility of the human or agent
+using them.
 Executable models can test encoded behavior, not the adequacy of prose contracts.
 
 Run the tool regressions and the independent toy project's acceptance tests:

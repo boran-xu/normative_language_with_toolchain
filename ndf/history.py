@@ -71,3 +71,86 @@ def change(before, after):
     if before.signature() != after.signature():
         return 'modified+moved' if before.path != after.path else 'modified'
     return 'moved' if before.path != after.path else None
+
+
+def normalized_body(body):
+    """Ignore prose wrapping/spacing, preserving code and inline-code contents."""
+    import re
+    # Protect code fragments first. Their whitespace may affect behavior.
+    chunks, paragraph, fence = [], [], None
+    def flush():
+        if paragraph:
+            text = '\n'.join(paragraph)
+            chunks.append(re.sub(r'(`+).*?\1|\s+', lambda m: m[0] if m[0].startswith('`') else ' ', text, flags=re.S).strip())
+            paragraph.clear()
+    for line in body.splitlines():
+        marker = re.match(r'^\s{0,3}(`{3,}|~{3,})(.*)$', line)
+        if fence:
+            chunks.append(line)
+            if marker and marker[1][0] == fence[0] and len(marker[1]) >= fence[1] and not marker[2].strip():
+                fence = None
+        elif marker:
+            flush()
+            fence = (marker[1][0], len(marker[1]))
+            chunks.append(line)
+        else:
+            paragraph.append(line)
+    flush()
+    return tuple(chunks)
+
+
+def normalized_signature(clause):
+    from .core import EDGE_KEYS
+    meta = dict(clause.meta)
+    for key in EDGE_KEYS:
+        if key in meta:
+            meta[key] = ','.join(sorted(set(t.strip() for t in meta[key].split(',') if t.strip())))
+    return ' '.join(clause.title.split()), meta, normalized_body(clause.body)
+
+
+def changelog(before, after):
+    """Clause-level classifications and exact changes; no prose interpretation."""
+    import difflib
+    rows = []
+    for cid in sorted(set(before) | set(after)):
+        old, new = before.get(cid), after.get(cid)
+        kind = change(old, new)
+        if not kind:
+            continue
+        categories = []
+        if old is None or new is None:
+            categories.append('added' if old is None else 'deleted')
+        else:
+            if old.signature() != new.signature():
+                categories.append('formatting-only' if normalized_signature(old) == normalized_signature(new) else 'modified')
+            if old.path != new.path:
+                categories.append('moved')
+            if old.meta.get('status') != new.meta.get('status'):
+                if new.meta.get('status') == 'deprecated':
+                    categories.append('deprecated')
+            old_sup = {t for k, t in old.edges() if k == 'superseded-by'}
+            new_sup = {t for k, t in new.edges() if k == 'superseded-by'}
+            if new_sup and old_sup != new_sup:
+                categories.append('superseded')
+        def edges(c):
+            return set(c.edges()) | {('mention', t.strip()) for t in c.refs} if c else set()
+        old_edges, new_edges = edges(old), edges(new)
+        old_meta, new_meta = old.meta if old else {}, new.meta if new else {}
+        def census(c):
+            if not c:
+                return {'TBD_markers': 0, 'TBD_level': 0, 'open_options': 0, 'open_questions': 0}
+            return {'TBD_markers': c.body.count('⟨TBD:'),
+                    'TBD_level': int(c.meta.get('level') == 'tbd' and c.meta.get('kind') != 'option'),
+                    'open_options': int(c.active() and c.meta.get('kind') == 'option' and c.meta.get('level') == 'tbd'),
+                    'open_questions': int(c.active() and c.meta.get('kind') == 'question' and c.meta.get('status', 'open') not in ('closed', 'resolved'))}
+        old_counts, new_counts = census(old), census(new)
+        rows.append({'id': cid, 'change': kind, 'categories': categories,
+                     'before': old.path if old else None, 'after': new.path if new else None,
+                     'metadata_before': old_meta if old else None, 'metadata_after': new_meta if new else None,
+                     'metadata_changes': {k: {'before': old_meta.get(k), 'after': new_meta.get(k)} for k in sorted(set(old_meta) | set(new_meta)) if old_meta.get(k) != new_meta.get(k)},
+                     'edges_added': [{'type': k, 'target': t} for k, t in sorted(new_edges - old_edges)],
+                     'edges_removed': [{'type': k, 'target': t} for k, t in sorted(old_edges - new_edges)],
+                     'census_delta': {k: new_counts[k] - old_counts[k] for k in old_counts},
+                     'title_before': old.title if old else None, 'title_after': new.title if new else None,
+                     'body_diff': '\n'.join(difflib.unified_diff((old.body if old else '').splitlines(), (new.body if new else '').splitlines(), fromfile='before', tofile='after', lineterm=''))})
+    return rows
