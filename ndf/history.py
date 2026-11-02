@@ -1,7 +1,7 @@
 """Read complete Git snapshots; never rely on filename rename heuristics."""
 import subprocess
 from pathlib import Path
-from .core import parse
+from .core import parse, reference_ids
 from .census import census
 
 
@@ -30,12 +30,20 @@ class History:
         commit = self.revision(ref)
         if commit not in self.cache:
             records = {}
-            paths = git(self.repo, 'ls-tree', '-rz', '--name-only', commit).split(b'\0')
+            paths = git(self.repo, 'ls-tree', '-rz', commit).split(b'\0')
             for raw in paths:
-                path = raw.decode('utf-8', errors='surrogateescape')
+                if not raw:
+                    continue
+                header, raw_path = raw.split(b'\t', 1)
+                mode = header.split()[0]
+                path = raw_path.decode('utf-8', errors='surrogateescape')
                 if not path.endswith('.md') or (self.prefix and not path.startswith(self.prefix + '/')):
                     continue
                 relative = path[len(self.prefix) + 1:] if self.prefix else path
+                if mode == b'120000':
+                    raise ValueError(f'{relative}: Markdown symlinks are unsupported at commit {commit}')
+                if mode not in (b'100644', b'100755'):
+                    continue
                 content = git(self.repo, 'show', commit + ':' + path).decode('utf-8')
                 for clause in parse(content, relative):
                     if clause.id in records:
@@ -121,17 +129,28 @@ def changelog(before, after):
     """Clause-level classifications and exact changes; no prose interpretation."""
     import difflib
     rows = []
+    def edges(c, snapshot):
+        if c is None:
+            return set()
+        mentions = {('mention', target) for ref in c.refs
+                    for target in (reference_ids(ref, list(snapshot.values())) or [ref.strip()])}
+        return set(c.edges()) | mentions
     for cid in sorted(set(before) | set(after)):
         old, new = before.get(cid), after.get(cid)
-        kind = change(old, new)
-        if not kind:
+        old_edges, new_edges = edges(old, before), edges(new, after)
+        graph_changed = old_edges != new_edges
+        raw_change = change(old, new)
+        kind = raw_change
+        if not kind and not graph_changed:
             continue
+        if graph_changed and kind in (None, 'moved'):
+            kind = 'modified+moved' if kind == 'moved' else 'modified'
         categories = []
         if old is None or new is None:
             categories.append('added' if old is None else 'deleted')
         else:
-            if old.signature() != new.signature():
-                categories.append('formatting-only' if normalized_signature(old) == normalized_signature(new) else 'modified')
+            if old.signature() != new.signature() or graph_changed:
+                categories.append('formatting-only' if normalized_signature(old) == normalized_signature(new) and not graph_changed else 'modified')
             if old.path != new.path:
                 categories.append('moved')
             if old.meta.get('status') != new.meta.get('status'):
@@ -141,12 +160,9 @@ def changelog(before, after):
             new_sup = {t for k, t in new.edges() if k == 'superseded-by'}
             if new_sup and old_sup != new_sup:
                 categories.append('superseded')
-        def edges(c):
-            return set(c.edges()) | {('mention', t.strip()) for t in c.refs} if c else set()
-        old_edges, new_edges = edges(old), edges(new)
         old_meta, new_meta = old.meta if old else {}, new.meta if new else {}
         old_counts, new_counts = census(old), census(new)
-        rows.append({'id': cid, 'change': kind, 'categories': categories,
+        rows.append({'id': cid, 'change': kind, 'categories': categories, 'graph_only': raw_change is None,
                      'before': old.path if old else None, 'after': new.path if new else None,
                      'metadata_before': old_meta if old else None, 'metadata_after': new_meta if new else None,
                      'metadata_changes': {k: {'before': old_meta.get(k), 'after': new_meta.get(k)} for k in sorted(set(old_meta) | set(new_meta)) if old_meta.get(k) != new_meta.get(k)},

@@ -4,9 +4,10 @@ A small Python CLI implementing the practical core of the accompanying Normative
 Description Format proposal. The original English/Chinese proposals and PDFs are
 unchanged. This implementation and its limitations are documented here separately.
 
-Requires Python 3.10+ and Git for history commands. No runtime dependencies for
-JSON manifests; JSON is valid YAML. Ordinary YAML manifests require optional
-PyYAML (`pip install '.[yaml]'`).
+Requires Python 3.10+, Git for history commands, and `markdown-it-py` for
+deterministic CommonMark parsing. Install the package and its parser dependency
+with `python3 -m pip install .`. JSON manifests are valid YAML; ordinary YAML
+syntax additionally requires `python3 -m pip install '.[yaml]'`.
 
 Run directly from this checkout:
 
@@ -17,7 +18,8 @@ python3 ndf.py --root examples/chrono/spec coverage
 python3 ndf.py --root examples/chrono/spec test
 ```
 
-Optionally install with `pip install .` to obtain the `ndf` command.
+Installation also provides the `ndf` command. The source-checkout commands above
+use the same installed parser dependency.
 `--root` defaults to `spec`. Put `--root` and `--json` before the subcommand.
 Exit codes: 0 success, 1 validation errors, 2 invocation/configuration/Git errors.
 The `test` command returns the test process exit code.
@@ -40,8 +42,11 @@ The `test` command returns the test process exit code.
 | `export` | JSON clause records, including metadata, text, references and locations |
 | `test` | Execute Python unittest discovery in `models/` using the current Python interpreter |
 
-Coverage counts *all* active L1 must clauses except `info`, including definitions
-and constraints. It measures specified verification links, not passing tests.
+Coverage counts *all* active contract-layer must clauses except `info`, including definitions
+and constraints. The contract layer is the second entry of the declared ordered
+ladder, including renamed layers; output reports `contract_layer` and retains
+`L1_must` as the compatible count key. It measures specified verification links,
+not passing tests.
 Model tests run only when explicitly requested by `test`; `check` never executes
 project code. Model tests should reference verification/requirement IDs in names
 or assertion messages. `test` fails if no tests exist or discovery executes zero tests. See the toy project's README
@@ -124,6 +129,9 @@ flag ordinary words. It does not assess whether a defined term is used correctly
 `trace` follows incoming `refines` edges down to more detailed clauses and outgoing
 `depends-on` edges recursively. At every visited clause it lists incoming
 `verifies` links and other outgoing typed edges. Plain mentions are not traversed.
+Self/cyclic supersession and contradictory replacement targets are structural
+errors; dependency cycles remain valid graphs.
+
 A repeated node is marked `already shown` and is not expanded again, whether
 encountered through a cycle or a shared dependency. The traversal is iterative,
 so long dependency chains do not hit Python's recursion limit. `--json` returns
@@ -137,7 +145,11 @@ preserved. Census deltas use the same active-clause rules as coverage and exclud
 markers inside code examples. This is a
 syntactic classification, not a judgment about changed meaning. Metadata deltas,
 added/removed typed edges and mentions, title changes, unified body patches and
-per-clause TBD/open-option/open-question census deltas are included. Results are
+per-clause TBD/open-option/open-question census deltas are included. Mention
+edges resolve to stable IDs, so equivalent file/ID spellings do not invent graph
+changes. Whole-file references expand to the clauses present in each snapshot;
+a consumer can have `graph_only: true` when a target file gains or loses a clause
+without changing the consumer text. Results are
 sorted by clause ID and compare the exact two snapshots, regardless of whether
 their commits are on the same branch.
 
@@ -164,6 +176,10 @@ Use `log --all` to include unmerged branches reachable from local refs. A normal
 truncated boundary as a newly added clause; fetch full history first. Snapshot
 diffs remain available in shallow repositories when both commits exist locally. Snapshots with
 duplicate IDs fail explicitly rather than arbitrarily choosing one clause.
+Authored Markdown must use regular files: symlink Markdown is rejected in both
+current-tree and historical queries. Root-directory symlinks are supported.
+Directories ending in `.md` are traversed, never read as files; Git metadata is
+excluded relative to the selected root.
 Historical queries read Git snapshots independently of the current manifest and
 Markdown, even if the current spec directory is missing. History is deliberately simple and scans snapshots; large repositories
 may benefit from a future persistent cache.
@@ -200,3 +216,7 @@ branches, deletions/restoration, file moves, and history with a broken worktree.
 
 The [second adversarial audit report](tests/ADVERSARIAL_AUDIT.md) records the
 18 distinct bugs found and fixed, their regressions, and the expanded test scope.
+
+The [interaction audit report](tests/INTERACTION_AUDIT.md) covers the next pass,
+including the CommonMark parser replacement, bootstrap preflight checks and
+15 further defects with regressions.

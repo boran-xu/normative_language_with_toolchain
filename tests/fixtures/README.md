@@ -26,10 +26,14 @@ The relative bundle URL in `.gitmodules` is a locator; bootstrap resolves it
 inside the current outer checkout and supplies an absolute local URL for that
 one Git invocation. This avoids resolving it against a hosting service's remote
 URL. Local file transport is enabled only for that invocation, never globally.
-No publishing, network service, global Git configuration or third-party Python
-packages are needed.
+Bootstrap uses only Python and Git: no publishing, network service, global Git
+configuration changes or third-party Python packages are needed for that step.
+Running the NDF tests requires the project dependencies described in the root
+README (`python3 -m pip install .`).
 
-Bootstrap rejects a dirty fixture or an inconsistent pin. It fetches every
+Bootstrap validates manifest shapes and verifies the bundle and all advertised
+scenario tag hashes before initializing or moving the checkout. It rejects a
+dirty fixture or an inconsistent pin. It fetches every
 bundle branch/tag and verifies all advertised scenario tags against
 `history.json`; a detached HEAD alone would not preserve side histories.
 It also rejects shallow history. Tests fail with setup instructions if the
@@ -154,3 +158,6 @@ not rewrite expected results from whatever the current CLI happens to print.
 
 The broader command/layout/Markdown/graph test matrix and root-cause accounting
 are recorded in [the second audit report](../ADVERSARIAL_AUDIT.md).
+
+The [interaction audit](../INTERACTION_AUDIT.md) adds malformed-bootstrap,
+symlink/namespace, CommonMark composition and graph-only diff regressions.

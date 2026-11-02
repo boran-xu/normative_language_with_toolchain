@@ -4,7 +4,7 @@ from pathlib import Path, PurePosixPath
 import json
 import re
 import shlex
-from .markdown import visible, references, META
+from .markdown import tokens, inline_text, references, META
 
 HEADING = re.compile(r'^ {0,3}(#{1,6})[ \t]+(.*?)\s*$')
 ANCHOR = re.compile(r'\{#([A-Za-z][\w.-]*)\}\s*$')
@@ -49,26 +49,31 @@ def parse(text, path):
             current.body = '\n'.join(lines).strip('\n\r')
             current.refs = references(current.body)
             clauses.append(current)
-    raw_lines = text.splitlines()
-    for number, (line, exposed) in enumerate(zip(raw_lines, visible(text, keep_metadata=True).splitlines()), 1):
-        heading = HEADING.match(exposed)
-        heading_text = re.sub(r'[ \t]+#+[ \t]*$', '', heading[2]).rstrip() if heading else ''
+    headings, metadata_lines = {}, {}
+    parsed = tokens(text)
+    for position, token in enumerate(parsed):
+        if token.type == 'heading_open' and token.level == 0 and token.markup.startswith('#'):
+            headings[token.map[0]] = (int(token.tag[1:]), inline_text(parsed[position + 1], title=True).rstrip())
+        elif token.type == 'html_block' and token.level == 0 and META.fullmatch(token.content):
+            metadata_lines[token.map[0]] = META.fullmatch(token.content)
+    for index, line in enumerate(text.splitlines()):
+        number = index + 1
+        heading = headings.get(index)
+        heading_text = heading[1] if heading else ''
         anchor = ANCHOR.search(heading_text) if heading else None
-        if heading and (anchor or (current and len(heading[1]) <= current_depth)):
+        if heading and (anchor or (current and heading[0] <= current_depth)):
             finish()
             current, lines = None, []
             if anchor:
                 current = Clause(anchor[1], heading_text[:anchor.start()].strip(), path, number)
-                current_depth = len(heading[1])
+                current_depth = heading[0]
             continue
         if current:
-            metadata = META.fullmatch(exposed)
+            metadata = metadata_lines.get(index)
             if metadata:
-                # Visibility masks code spans; actual metadata values come from
-                # the source line after its structural position is established.
-                original = META.fullmatch(line)
+                lines.append('')  # Preserve the Markdown block boundary.
                 try:
-                    for token in shlex.split(original[1]):
+                    for token in shlex.split(metadata[1]):
                         if '=' not in token:
                             raise ValueError('expected key=value: ' + token)
                         key, value = token.split('=', 1)
@@ -83,9 +88,19 @@ def parse(text, path):
     return clauses
 
 
+def markdown_files(root):
+    for path in sorted(root.rglob('*.md')):
+        if '.git' in path.relative_to(root).parts:
+            continue
+        if path.is_symlink():
+            raise ValueError(f'{path.relative_to(root)}: Markdown symlinks are unsupported; use regular clause files')
+        if path.is_file():
+            yield path
+
+
 def load(root):
-    return [c for p in sorted(root.rglob('*.md')) if '.git' not in p.parts
-            for c in parse(p.read_text(encoding='utf-8'), p.relative_to(root).as_posix())]
+    return [c for path in markdown_files(root)
+            for c in parse(path.read_text(encoding='utf-8'), path.relative_to(root).as_posix())]
 
 
 def manifest(root):
@@ -147,7 +162,7 @@ def resolve(target, clauses, root):
 def validate(clauses, root, config):
     from .glossary import prose as visible_prose
     errors, warnings, index = [], [], {}
-    for path in root.rglob('*.md'):
+    for path in markdown_files(root):
         if re.search(r'(?m)^(<{7}|={7}|>{7})(?: |$)', visible_prose(path.read_text(encoding='utf-8'))):
             errors.append(f'{path.relative_to(root)}: unresolved Git conflict marker')
     kinds = {'req', 'def', 'arch', 'constraint', 'option', 'verif', 'info', 'decision', 'question'}
@@ -185,6 +200,12 @@ def validate(clauses, root, config):
             errors.append(f'{loc}: invalid status {status}')
         if (status and status.startswith('superseded-by=') and not status.split('=', 1)[1].strip()) or ('superseded-by' in c.meta and not c.meta['superseded-by'].strip()):
             errors.append(f'{loc}: empty supersession target')
+        status_target = status.split('=', 1)[1].strip() if status and status.startswith('superseded-by=') else None
+        explicit_target = c.meta.get('superseded-by')
+        if status_target and explicit_target and status_target != explicit_target.strip():
+            errors.append(f'{loc}: conflicting supersession targets')
+        if any(',' in target for target in (status_target, explicit_target) if target):
+            errors.append(f'{loc}: supersession requires exactly one target')
         if c.meta.get('kind') == 'question' and status in {'closed', 'resolved'} and not c.resolution():
             warnings.append(f'{loc}: closed question has no resolution')
         for target in c.refs:
@@ -211,21 +232,23 @@ def validate(clauses, root, config):
                 if child in order and parent in order and order.index(child) <= order.index(parent):
                     errors.append(f'{c.id}: refines must point to a lower layer: {target}')
     # Refinement must be acyclic, even when layer metadata is absent.
-    visited, visiting = set(), set()
-    for start in index:
-        pending = [(start, False)]
-        while pending:
-            cid, exiting = pending.pop()
-            if exiting:
-                visiting.discard(cid)
-                visited.add(cid)
-            elif cid in visiting:
-                errors.append(f'{cid}: refinement cycle')
-            elif cid not in visited:
-                visiting.add(cid)
-                pending.append((cid, True))
-                pending.extend((target, False) for kind, target in index[cid].edges()
-                               if kind == 'refines' and target in index)
+    for relation in ('refines', 'superseded-by'):
+        visited, visiting = set(), set()
+        for start in index:
+            pending = [(start, False)]
+            while pending:
+                cid, exiting = pending.pop()
+                if exiting:
+                    visiting.discard(cid)
+                    visited.add(cid)
+                elif cid in visiting:
+                    label = 'refinement' if relation == 'refines' else 'supersession'
+                    errors.append(f'{cid}: {label} cycle')
+                elif cid not in visited:
+                    visiting.add(cid)
+                    pending.append((cid, True))
+                    pending.extend((target, False) for kind, target in index[cid].edges()
+                                   if kind == relation and target in index)
     from .glossary import warnings as glossary_warnings
     warnings.extend(glossary_warnings(clauses, config))
     return errors, warnings

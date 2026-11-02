@@ -1,75 +1,79 @@
-"""Conservative Markdown visibility helpers used by structural checks.
-
-Masks preserve offsets/newlines so parser locations always refer to source text.
-"""
+"""Markdown structure comes from CommonMark tokens; NDF adds only wiki links."""
+from functools import lru_cache
 import re
+from markdown_it import MarkdownIt
 
-FENCE = re.compile(r'^ {0,3}(`{3,}|~{3,})([^\r\n]*)[\r\n]*$')
 META = re.compile(r'^\s*<!--\s*ndf:\s*(.*?)\s*-->\s*$', re.S)
 
 
-def blank(text):
-    return ''.join('\n' if char == '\n' else '\r' if char == '\r' else ' ' for char in text)
+def _reference(state, silent):
+    if not state.src.startswith('[[', state.pos):
+        return False
+    end = state.src.find(']]', state.pos + 2, state.posMax)
+    if end < 0:
+        return False
+    content = state.src[state.pos + 2:end]
+    target, _, label = content.partition('|')
+    if not target.strip() or ']' in target:
+        return False
+    if not silent:
+        token = state.push('ndf_reference', '', 0)
+        token.content = content
+        token.meta = {'target': target, 'label': label}
+    state.pos = end + 2
+    return True
 
 
-def without_inline_code(text):
-    return re.sub(r'(?<!`)(`+)(?!`)(.*?)\1(?!`)', lambda m: blank(m[0]), text, flags=re.S)
+_PARSER = MarkdownIt('commonmark', {'maxNesting': 100})
+_PARSER.inline.ruler.before('link', 'ndf_reference', _reference)
+
+
+@lru_cache(maxsize=256)
+def tokens(text):
+    # Consumers read tokens only. Caching avoids reparsing unchanged Git blobs.
+    return _PARSER.parse(text)
+
+
+def inline_text(token, title=False):
+    parts = []
+    for child in token.children or []:
+        if child.type in ('text', 'text_special'):
+            parts.append(child.content)
+        elif child.type in ('softbreak', 'hardbreak'):
+            parts.append('\n')
+        elif child.type == 'ndf_reference':
+            parts.append('[[' + child.content + ']]')
+        elif title and child.type == 'code_inline':
+            parts.append(child.markup + child.content + child.markup)
+        elif title and child.type in ('em_open', 'em_close', 'strong_open', 'strong_close'):
+            parts.append(child.markup)
+        elif child.type == 'html_inline' and not child.content.startswith('<!--'):
+            # Tags are syntax; only their text contents participate in prose.
+            continue
+        elif child.type == 'image':
+            parts.append(child.content)
+    return ''.join(parts)
+
+
+def inlines(text):
+    for token in tokens(text):
+        if token.type == 'inline':
+            yield token
+        elif token.type == 'html_block' and token.content.lstrip().startswith('<!--'):
+            # A comment's closing line can also carry ordinary NDF prose.
+            tail = re.sub(r'<!--.*?-->', '', token.content, flags=re.S)
+            if tail.strip() and '<!--' not in tail:
+                yield from _PARSER.parseInline(tail)
 
 
 def visible(text, keep_metadata=False):
-    """Mask fenced/indented code, HTML comments and multiline code spans."""
-    output, fence, comment = [], None, False
-    inline_lines = without_inline_code(text).splitlines(keepends=True)
-    for line, inline_line in zip(text.splitlines(keepends=True), inline_lines):
-        marker = FENCE.match(line)
-        if fence:
-            if marker and marker[1][0] == fence[0] and len(marker[1]) >= fence[1] and not marker[2].strip():
-                fence = None
-            output.append(blank(line))
-            continue
-        if not comment:
-            if line.startswith(('    ', '\t')):
-                output.append(blank(line))
-                continue
-            if marker and not (marker[1][0] == '`' and '`' in marker[2]):
-                fence = marker[1][0], len(marker[1])
-                output.append(blank(line))
-                continue
-            if keep_metadata and META.fullmatch(line):
-                output.append(line)
-                continue
-        position, parts = 0, []
-        while position < len(line):
-            if comment:
-                end = line.find('-->', position)
-                stop = len(line) if end == -1 else end + 3
-                parts.append(blank(line[position:stop]))
-                comment = end == -1
-            else:
-                start = line.find('<!--', position)
-                while start != -1 and inline_line[start:start + 4] != '<!--':
-                    start = line.find('<!--', start + 4)
-                if start == -1:
-                    parts.append(line[position:])
-                    break
-                parts.append(line[position:start])
-                stop = start + 4
-                parts.append(blank(line[start:stop]))
-                comment = True
-            position = stop
-        output.append(''.join(parts))
-    return without_inline_code(''.join(output))
+    parts = [inline_text(token) for token in inlines(text)]
+    if keep_metadata:
+        parts.extend(token.content for token in tokens(text)
+                     if token.type == 'html_block' and META.fullmatch(token.content))
+    return '\n'.join(parts)
 
 
 def references(text):
-    result = []
-    text = visible(text)
-    for match in re.finditer(r'\[\[([^]|]+)(?:\|[^]]*)?\]\]', text):
-        offset = match.start()
-        escapes = 0
-        while offset > 0 and text[offset - 1] == '\\':
-            escapes += 1
-            offset -= 1
-        if escapes % 2 == 0:
-            result.append(match[1])
-    return result
+    return [child.meta['target'] for token in inlines(text)
+            for child in token.children or [] if child.type == 'ndf_reference']

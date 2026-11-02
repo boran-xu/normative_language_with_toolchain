@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Initialize the pinned fixture submodule offline from its tracked Git bundle."""
 import json
+import re
 from pathlib import Path
 import subprocess
 
@@ -22,9 +23,23 @@ def bootstrap():
         raise RuntimeError(f'{PATH} must be a tracked, unconflicted submodule')
     pin = record[1]
     manifest = json.loads((ROOT / 'tests/fixtures/history.json').read_text())
+    valid_hash = lambda value: isinstance(value, str) and re.fullmatch(r'(?:[0-9a-f]{40}|[0-9a-f]{64})', value)
+    if not isinstance(manifest, dict) or not valid_hash(manifest.get('pin')):
+        raise RuntimeError('history.json requires a valid pin hash')
+    refs = manifest.get('refs')
+    if not isinstance(refs, dict) or not refs or any(not isinstance(ref, str) or not ref or not valid_hash(value) for ref, value in refs.items()):
+        raise RuntimeError('history.json requires a nonempty refs mapping of names to commit hashes')
     if pin != manifest['pin']:
         raise RuntimeError('gitlink differs from history.json; update both deliberately')
     bundle = ROOT / 'tests/fixtures/chrono.bundle'
+    # Validate the bundle and every expected tag before initializing or moving
+    # the checkout. Rejected metadata must leave the fixture untouched.
+    git('bundle', 'verify', str(bundle))
+    advertised = {ref: commit for commit, ref in
+                  (line.split(' ', 1) for line in git('bundle', 'list-heads', str(bundle)).splitlines())}
+    for ref, expected in refs.items():
+        if advertised.get('refs/tags/' + ref) != expected:
+            raise RuntimeError('fixture bundle ref mismatch: ' + ref)
     target = ROOT / PATH
     if (target / '.git').exists() and git('status', '--porcelain', cwd=target):
         raise RuntimeError('fixture submodule is dirty; refusing to change it')

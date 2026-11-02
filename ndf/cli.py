@@ -44,8 +44,8 @@ def main(argv=None):
     diff = sub.add_parser('diff')
     diff.add_argument('range', help='A..B (commit hashes, branches, or tags)')
     args = parser.parse_args(argv)
-    root = args.root.resolve()
     try:
+        root = args.root.resolve()
         if args.command == 'init':
             if (root / 'ndf.yaml').exists():
                 raise ValueError('ndf.yaml already exists; init never overwrites a spec')
@@ -103,9 +103,11 @@ def main(argv=None):
                     for key, target in c.edges():
                         if key == 'verifies':
                             links.setdefault(target, []).append(c.id)
-            must = [c.id for c in clauses if c.active() and c.meta.get('layer') == 'L1' and c.meta.get('level') == 'must' and c.meta.get('kind') != 'info']
+            layers = list(config.get('layers', ['L0', 'L1', 'L2', 'L3']))
+            contract_layer = layers[1] if len(layers) > 1 else None
+            must = [c.id for c in clauses if c.active() and contract_layer is not None and c.meta.get('layer') == contract_layer and c.meta.get('level') == 'must' and c.meta.get('kind') != 'info']
             questions = [c.id for c in clauses if c.active() and c.meta.get('kind') == 'question' and c.meta.get('status', 'open') not in ('resolved', 'closed')]
-            result = {'L1_must': len(must), 'linked': len([cid for cid in must if cid in links]),
+            result = {'contract_layer': contract_layer, 'L1_must': len(must), 'linked': len([cid for cid in must if cid in links]),
                       'unverified': sorted(cid for cid in must if cid not in links),
                       'verification_links': links, 'open_questions': questions,
                       'TBD': [c.id for c in clauses if c.active() and (census(c)['TBD_level'] or census(c)['TBD_markers'])],
@@ -145,6 +147,6 @@ def main(argv=None):
             before, after = history.snapshot(a), history.snapshot(b)
             emit(changelog(before, after), args.json)
         return 0
-    except (ValueError, OSError, UnicodeError, RecursionError) as exc:
+    except (ValueError, OSError, UnicodeError, RuntimeError) as exc:
         print(f'ndf: {exc}', file=sys.stderr)
         return 2

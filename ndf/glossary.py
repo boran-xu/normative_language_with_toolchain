@@ -1,6 +1,6 @@
 """Advisory terminology checks on ordinary prose; no semantic inference."""
 import re
-from .markdown import visible
+from .markdown import visible, tokens
 
 WORDS = re.compile(r'[A-Za-z][A-Za-z0-9]*(?:[-/][A-Za-z0-9]+)*')
 IGNORED = set('MUST SHALL SHOULD MAY NOT TBD DSE TODO The A An When If Then Each Every All Any No On In At By For From To With Without While After Before This That These Those It Its See As And Or But Given Unless Whether'.split())
@@ -23,8 +23,17 @@ def vocabulary(clauses, config):
         # bold terms in a list, as in the proposal's worked example.
         title = c.title.strip('*_ ')
         terms.add(title.casefold())
-        for term in re.findall(r'(?m)^\s*[-*]\s+\*\*([^*]+)\*\*\s*(?:[—–:]|\s+-)', prose(c.body, keep_emphasis=True)):
-            terms.update(t.strip().casefold() for t in term.split('/'))
+        for block in tokens(c.body):
+            children = [child for child in block.children or [] if child.type != 'text' or child.content]
+            if block.type != 'inline' or not children or children[0].type != 'strong_open':
+                continue
+            end = next((i for i, child in enumerate(children) if child.type == 'strong_close'), None)
+            if end is None:
+                continue
+            tail = ''.join(child.content for child in children[end + 1:])
+            if re.match(r'^\s*(?:[—–:]|-\s)', tail):
+                term = ''.join(child.content for child in children[1:end])
+                terms.update(value.strip().casefold() for value in term.split('/'))
         for term in re.findall(r'(?:^|[.!?]\s+)(?:[Aa]n? |[Tt]he )?([A-Za-z][A-Za-z /-]*?)\s+(?:means|is defined as|refers to)\s', prose(c.body)):
             terms.add(term.strip().casefold())
         # Explicit aliases in a definition's prose, not a new reference syntax.
