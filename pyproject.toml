@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ndf-tools"
+version = "0.1.0"
+description = "Small file-based Normative Description Format tools"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+yaml = ["PyYAML>=6"]
+
+[project.scripts]
+ndf = "ndf.cli:main"
+
+[tool.setuptools]
+packages = ["ndf"]
