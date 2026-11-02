@@ -226,6 +226,51 @@ def build(b):
     return b.refs
 
 
+def hierarchy(b):
+    """Second development cycle: nested subsystems and a three-parent merge."""
+    b.git('checkout', '-q', 'main')
+    config = json.loads(b.read('spec/ndf.yaml'))
+    config['id-prefixes'] += ['CLK', 'IO', 'TEL', 'PWR']
+    b.write('spec/ndf.yaml', json.dumps(config, indent=2) + '\n')
+    for number, (prefix, area) in enumerate([('CLK', 'clock'), ('IO', 'inputs'), ('DSP', 'display'), ('TEL', 'telemetry'), ('PWR', 'power')]):
+        parent = 'CHR-000'
+        dependencies = 'REF-UNIT-001,PRM-DEB-001'
+        if number:
+            dependencies += ',' + ['CLK', 'IO', 'DSP', 'TEL'][number - 1] + '-HIER-001'
+        body = clause(prefix + '-HIER-001', area + ' contract', f'kind=req level=must layer=L1 refines={parent} depends-on=REF-UNIT-001 status=stable since=2.0', f'The {area} subsystem MUST preserve its state on an idle event.')
+        mechanism = clause(prefix + '-HIER-010', 'Mechanism', f'kind=req level=must layer=L2 refines={prefix}-HIER-001 depends-on={dependencies} status=stable since=2.0', 'The mechanism MUST use the shared event timebase. See [[refs/deep/time/units.md#REF-UNIT-001]].')
+        b.write(f'spec/20-behavior/domains/{area}/contracts.md', body + mechanism.replace('## Mechanism', '### Mechanism'))
+        b.write(f'spec/50-verification/domains/{area}/acceptance.md', clause('VER-HIER-' + prefix, 'Subsystem acceptance', f'kind=verif level=must layer=L3 verifies={prefix}-HIER-001,{prefix}-HIER-010 status=stable since=2.0', f'The {area} invariant MUST hold for every enumerated state.'))
+    b.write('spec/refs/deep/time/units.md', clause('REF-UNIT-001', 'timebase', 'kind=def level=must layer=L1 status=stable since=2.0 origin="Toy Time Standard 2.0 §2" origin-status=paraphrase', 'A timebase identifies a shared event epoch.') + clause('REF-UNIT-002', 'state', 'kind=def level=must layer=L1 status=stable since=2.0', 'A state is a complete subsystem snapshot.'))
+    b.write('spec/40-constraints/domains/invariants.md', clause('CON-HIER-001', 'Clock-domain invariant', 'kind=constraint level=must layer=L1 refines=CHR-000 depends-on=CLK-HIER-001 status=stable since=2.0', 'The clock domains MUST use one shared timebase.'))
+    b.write('spec/40-constraints/domains/options.md', clause('PRM-HIER-001', 'Input queue depth', 'kind=option level=tbd layer=L2 refines=IO-HIER-001 default=2 explore=2,4 unit=entries couples-with=PRM-DEB-001 status=draft since=2.0', 'The queue depth is open for exploration.'))
+    b.write('spec/open/domains/Q-HIER-001.md', clause('Q-HIER-001', 'Input queue depth decision', 'kind=question status=open blocks=PRM-HIER-001', '**Question.** Which queue depth handles the burst?'))
+    b.write('spec/decisions/domains/D-HIER-001.md', clause('D-HIER-001', 'Shared timebase', 'kind=decision date=2025-01-01 affects=CLK-HIER-001,IO-HIER-001', '**Decision.** Keep one event epoch across domains.'))
+    b.write('spec/10-architecture/domains/examples.md', clause('INFO-CODE-001', 'Illustrative syntax', 'kind=info level=may layer=L0 status=draft since=2.0', 'The following code is an informative example.\n````markdown\n## Fake {#CHR-NOT-REAL}\n<!-- ndf: kind=req level=must layer=L1 -->\n[[NOT-ASSIGNED]]\n⟨TBD: example only⟩ ⟨DSE: example only⟩\n````'))
+    b.write('spec/models/hierarchy/__init__.py', '')
+    b.write('spec/models/hierarchy/test_domains.py', 'import unittest\nfrom chrono import Chrono\nclass Domains(unittest.TestCase):\n def test_VER_HIER_shared_idle(self):\n  model = Chrono()\n  for _ in range(100): model.step(tick=True)\n  self.assertEqual((model.count, model.running), (0, False))\n')
+    b.save('Decompose the stopwatch into five nested stateful domains', 'scenario/hierarchy-base')
+    b.branch('feature/hierarchy-io', 'scenario/hierarchy-base')
+    b.replace('spec/20-behavior/domains/inputs/contracts.md', 'on an idle event.', 'on every idle event.')
+    b.save('Clarify input idle invariants', 'scenario/hierarchy-io')
+    b.branch('feature/hierarchy-telemetry', 'scenario/hierarchy-base')
+    b.replace('spec/20-behavior/domains/telemetry/contracts.md', 'on an idle event.', 'while no event is admitted.')
+    b.save('Clarify telemetry admission boundary', 'scenario/hierarchy-telemetry')
+    b.git('checkout', '-q', 'main')
+    b.replace('spec/20-behavior/domains/power/contracts.md', 'on an idle event.', 'while stopped.')
+    b.save('Clarify power idle state', 'scenario/hierarchy-main')
+    b.tick += 1
+    b.git('merge', '--no-ff', '-m', 'Integrate input and telemetry domains with power', 'feature/hierarchy-io', 'feature/hierarchy-telemetry')
+    b.tag('scenario/hierarchy-octopus')
+    b.git('mv', 'spec/20-behavior/domains/inputs/contracts.md', 'spec/30-interfaces/input domains.md')
+    path = 'spec/20-behavior/domains/telemetry/contracts.md'
+    parent, child = b.read(path).split('### Mechanism', 1)
+    b.write(path, parent.rstrip() + '\n')
+    b.write('spec/20-behavior/domains/telemetry/mechanism.md', '## Mechanism' + child)
+    b.save('Move input interface and split telemetry mechanism into its own file', 'scenario/hierarchy-move-split')
+    b.tag('v2.0')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--bundle', type=Path, required=True)
@@ -234,10 +279,11 @@ def main():
     with tempfile.TemporaryDirectory(prefix='ndf-history-build-') as directory:
         b = Builder(Path(directory))
         refs = build(b)
+        hierarchy(b)
         args.bundle.parent.mkdir(parents=True, exist_ok=True)
         b.git('bundle', 'create', str(args.bundle.resolve()), '--all')
-        args.manifest.write_text(json.dumps({'pin': refs['v1.0'], 'refs': dict(sorted(refs.items()))}, indent=2) + '\n')
-        print(f'Built {len(refs)} named snapshots; pin {refs["v1.0"]}')
+        args.manifest.write_text(json.dumps({'pin': refs['v2.0'], 'refs': dict(sorted(refs.items()))}, indent=2) + '\n')
+        print(f'Built {len(refs)} named snapshots; pin {refs["v2.0"]}')
 
 
 if __name__ == '__main__':

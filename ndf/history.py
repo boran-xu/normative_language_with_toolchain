@@ -2,6 +2,7 @@
 import subprocess
 from pathlib import Path
 from .core import parse
+from .census import census
 
 
 def git(repo, *args):
@@ -16,7 +17,7 @@ class History:
         existing = root.resolve()
         while not existing.exists():
             existing = existing.parent
-        self.repo = Path(git(existing, 'rev-parse', '--show-toplevel').decode().strip())
+        self.repo = Path(git(existing, 'rev-parse', '--show-toplevel').decode().removesuffix('\n'))
         self.prefix = root.resolve().relative_to(self.repo.resolve()).as_posix()
         if self.prefix == '.':
             self.prefix = ''
@@ -44,6 +45,8 @@ class History:
         return self.cache[commit]
 
     def events(self, cid, ref='HEAD', all_refs=False):
+        if git(self.repo, 'rev-parse', '--is-shallow-repository').decode().strip() == 'true':
+            raise ValueError('clause log requires complete history; this repository is shallow (fetch --unshallow)')
         revision = self.revision(ref)
         args = ['rev-list', '--topo-order', '--parents']
         args.extend(['--all', revision] if all_refs else [revision])
@@ -92,6 +95,9 @@ def normalized_body(body):
             chunks.append(line)
             if marker and marker[1][0] == fence[0] and len(marker[1]) >= fence[1] and not marker[2].strip():
                 fence = None
+        elif line.startswith(('    ', '\t')):
+            flush()
+            chunks.append(line)
         elif marker:
             flush()
             fence = (marker[1][0], len(marker[1]))
@@ -139,13 +145,6 @@ def changelog(before, after):
             return set(c.edges()) | {('mention', t.strip()) for t in c.refs} if c else set()
         old_edges, new_edges = edges(old), edges(new)
         old_meta, new_meta = old.meta if old else {}, new.meta if new else {}
-        def census(c):
-            if not c:
-                return {'TBD_markers': 0, 'TBD_level': 0, 'open_options': 0, 'open_questions': 0}
-            return {'TBD_markers': c.body.count('⟨TBD:'),
-                    'TBD_level': int(c.meta.get('level') == 'tbd' and c.meta.get('kind') != 'option'),
-                    'open_options': int(c.active() and c.meta.get('kind') == 'option' and c.meta.get('level') == 'tbd'),
-                    'open_questions': int(c.active() and c.meta.get('kind') == 'question' and c.meta.get('status', 'open') not in ('closed', 'resolved'))}
         old_counts, new_counts = census(old), census(new)
         rows.append({'id': cid, 'change': kind, 'categories': categories,
                      'before': old.path if old else None, 'after': new.path if new else None,

@@ -4,8 +4,9 @@ from pathlib import Path
 import re
 import sys
 import uuid
-from .core import load, manifest, validate, reference_ids
+from .core import load, manifest, validate, reference_ids, relative_path
 from .history import History, change, changelog
+from .census import census
 from .graph import trace as trace_graph, render_trace
 
 
@@ -56,7 +57,7 @@ def main(argv=None):
             return 0
         historical = args.command in ('log', 'diff')
         config = {} if historical else manifest(root)
-        clauses = [] if historical else load(root)
+        clauses = [] if historical or args.command == 'new-id' else load(root)
         if args.command == 'new-id':
             if not any(args.prefix == p or args.prefix.startswith(p + '-') for p in config['id-prefixes']):
                 raise ValueError('prefix is not declared in ndf.yaml')
@@ -107,21 +108,21 @@ def main(argv=None):
             result = {'L1_must': len(must), 'linked': len([cid for cid in must if cid in links]),
                       'unverified': sorted(cid for cid in must if cid not in links),
                       'verification_links': links, 'open_questions': questions,
-                      'TBD': [c.id for c in clauses if c.active() and (c.meta.get('level') == 'tbd' and c.meta.get('kind') != 'option' or '⟨TBD:' in c.body)],
+                      'TBD': [c.id for c in clauses if c.active() and (census(c)['TBD_level'] or census(c)['TBD_markers'])],
                       'open_options': [c.id for c in clauses if c.active() and c.meta.get('kind') == 'option' and c.meta.get('level') == 'tbd'],
-                      'inline_DSE': sum(c.body.count('⟨DSE:') for c in clauses),
-                      'conflicts': [{'id': c.id, 'with': target} for c in clauses for key, target in c.edges() if key == 'conflicts-with'],
+                      'inline_DSE': sum(census(c)['inline_DSE'] for c in clauses),
+                      'conflicts': [{'id': c.id, 'with': target} for c in clauses if c.active() for key, target in c.edges() if key == 'conflicts-with'],
                       'note': 'Links measure specified coverage, not implemented or passing tests.'}
             if args.command == 'status':
                 result['questions'] = [{'id': c.id, 'status': c.meta.get('status', 'open'), 'blocks': [t for k, t in c.edges() if k == 'blocks'], 'resolution': c.resolution(), 'body': c.body} for c in clauses if c.meta.get('kind') == 'question']
             emit(result, args.json)
         elif args.command == 'options':
-            emit([{'id': c.id, **c.meta} for c in clauses if c.meta.get('kind') == 'option'], args.json)
+            emit([{**c.meta, 'id': c.id} for c in clauses if c.meta.get('kind') == 'option'], args.json)
         elif args.command == 'deps':
-            prefix = args.path.rstrip('/')
-            if Path(prefix).is_absolute() or '..' in Path(prefix).parts:
+            prefix = relative_path(args.path)
+            if prefix is None:
                 raise ValueError('dependency path must be relative to the spec root')
-            external = {c.id for c in clauses if c.path == prefix or c.path.startswith(prefix + '/')}
+            external = {c.id for c in clauses if prefix == '.' or c.path == prefix or c.path.startswith(prefix + '/')}
             rows = set()
             for c in clauses:
                 if c.id in external:

@@ -1,6 +1,6 @@
 """Advisory terminology checks on ordinary prose; no semantic inference."""
 import re
-from .markdown import without_inline_code
+from .markdown import visible
 
 WORDS = re.compile(r'[A-Za-z][A-Za-z0-9]*(?:[-/][A-Za-z0-9]+)*')
 IGNORED = set('MUST SHALL SHOULD MAY NOT TBD DSE TODO The A An When If Then Each Every All Any No On In At By For From To With Without While After Before This That These Those It Its See As And Or But Given Unless Whether'.split())
@@ -8,21 +8,7 @@ IGNORED = set('MUST SHALL SHOULD MAY NOT TBD DSE TODO The A An When If Then Each
 
 def prose(text, keep_emphasis=False):
     """Remove fenced/inline code, metadata, destinations and ID references."""
-    lines, fence = [], None
-    for line in text.splitlines():
-        marker = re.match(r'^\s{0,3}(`{3,}|~{3,})(.*)$', line)
-        if marker:
-            marks, tail = marker.groups()
-            if fence is None:
-                fence = (marks[0], len(marks))
-            elif marks[0] == fence[0] and len(marks) >= fence[1] and not tail.strip():
-                fence = None
-            continue
-        if fence is None:
-            lines.append(line)
-    value = '\n'.join(lines)
-    value = re.sub(r'<!--[\s\S]*?-->', '', value)
-    value = without_inline_code(value)
+    value = visible(text)
     value = re.sub(r'\[\[[^]]*\]\]', '', value)
     value = re.sub(r'\[([^]]+)\]\([^)]*\)', r'\1', value)
     return value if keep_emphasis else value.replace('**', '').replace('__', '')
@@ -66,12 +52,12 @@ def warnings(clauses, config):
         text = re.sub(r'(?m)^\s*(?:Context|Decision|Rationale|Alternatives rejected|Source|Question|Resolution)[.:]\s*', '', prose(c.body))
         loc = f'{c.path}:{c.line} {c.id}'
         for alias, preferred in sorted(synonyms.items()):
-            if re.search(r'(?<!\w)' + re.escape(alias) + r'(?!\w)', text, re.I):
+            if re.search(r'(?<!\w)' + r'\s+'.join(re.escape(word) for word in alias.split()) + r'(?!\w)', text, re.I):
                 result.append(f'{loc}: inconsistent synonym "{alias}"; prefer "{preferred}"')
         # Mask defined phrases before capitalized-word detection, so a known
         # multiword term does not produce warnings for its individual words.
         for term in sorted(terms | set(synonyms), key=lambda term: (-len(term), term)):
-            text = re.sub(r'(?<!\w)' + re.escape(term) + r'(?!\w)', '', text, flags=re.I)
+            text = re.sub(r'(?<!\w)' + r'\s+'.join(re.escape(word) for word in term.split()) + r'(?!\w)', '', text, flags=re.I)
         candidates = set()
         for match in WORDS.finditer(text):
             word = match[0]

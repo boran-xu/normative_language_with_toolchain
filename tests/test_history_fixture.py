@@ -19,7 +19,7 @@ MANIFEST = json.loads((ROOT / 'tests/fixtures/history.json').read_text())
 CLI = ROOT / 'ndf.py'
 
 # These are independent expectations, not golden output captured from NDF.
-VERSIONS = {'v0.1': 6, 'v0.2': 17, 'v0.3': 19, 'v0.4': 19, 'v1.0': 19}
+VERSIONS = {'v0.1': 6, 'v0.2': 17, 'v0.3': 19, 'v0.4': 19, 'v1.0': 19, 'v2.0': 41}
 KINDS = {'arch', 'def', 'req', 'info', 'question', 'constraint', 'option', 'verif', 'decision'}
 COUNTER_HISTORY = {'v0.1', 'v0.4', 'scenario/conflict-main', 'scenario/conflict-side', 'scenario/conflict-resolved'}
 
@@ -98,7 +98,7 @@ class HistoryFixture(unittest.TestCase):
         return json.loads(result.stdout)
 
     def test_fixture_pin_refs_full_history_and_deterministic_export(self):
-        self.assertEqual(self.git('rev-parse', 'HEAD'), MANIFEST['pin'])
+        self.assertEqual(process(['git', 'rev-parse', 'HEAD'], SOURCE).stdout.strip(), MANIFEST['pin'])
         self.assertEqual(self.git('rev-parse', '--is-shallow-repository'), 'false')
         for ref, commit in MANIFEST['refs'].items():
             if ref.startswith(('v', 'scenario/')):
@@ -125,7 +125,8 @@ class HistoryFixture(unittest.TestCase):
             with self.subTest(tag=tag):
                 self.checkout(tag)
                 self.assertEqual(self.cli('check')['errors'], [])
-                self.assertIn('Ran 3 tests', self.cli('test').stderr)
+                expected_tests = 4 if tag.startswith('scenario/hierarchy-') else 3
+                self.assertIn(f'Ran {expected_tests} tests', self.cli('test').stderr)
 
     def test_coverage_evolves_and_closed_items_leave_worklist(self):
         expected = {
@@ -319,6 +320,29 @@ class HistoryFixture(unittest.TestCase):
         self.cli('init', spec=empty)
         self.assertEqual(self.cli('check', spec=empty)['clauses'], 0)
         self.cli('init', spec=empty, code=2)
+
+    def test_v2_hierarchy_and_three_parent_merge(self):
+        self.checkout('v2.0')
+        self.assertEqual(self.cli('check')['clauses'], 41)
+        self.assertEqual(len(self.cli('export')), 41)
+        report = self.cli('coverage')
+        self.assertEqual((report['L1_must'], report['linked']), (14, 8))
+        self.assertEqual(report['TBD'], [])  # code example markers are informative
+        self.assertEqual(report['open_questions'], ['Q-HIER-001'])
+        self.assertEqual(report['open_options'], ['PRM-HIER-001'])
+        self.assertEqual(report['inline_DSE'], 1)  # original active v1 marker only
+        self.assertIn('Ran 4 tests', self.cli('test').stderr)
+        for prefix in ('CLK', 'IO', 'DSP', 'TEL', 'PWR'):
+            self.assertIn(prefix + '-HIER-010', {r['id'] for r in self.cli('trace', prefix + '-HIER-001')})
+        rows = self.cli('log', 'IO-HIER-001')
+        merge = next(r for r in rows if r['commit'] == MANIFEST['refs']['scenario/hierarchy-octopus'])
+        self.assertEqual(set(merge['parents']), {MANIFEST['refs'][tag] for tag in ('scenario/hierarchy-main', 'scenario/hierarchy-io', 'scenario/hierarchy-telemetry')})
+        self.assertEqual({r['parent'] for r in merge['changes']}, {MANIFEST['refs'][tag] for tag in ('scenario/hierarchy-main', 'scenario/hierarchy-telemetry')})
+        moves = {r['id']: r for r in self.cli('diff', 'scenario/hierarchy-octopus..v2.0')}
+        self.assertEqual(set(moves), {'IO-HIER-001', 'IO-HIER-010', 'TEL-HIER-010'})
+        self.assertTrue(all(r['categories'] == ['moved'] for r in moves.values()))
+        self.assertEqual(moves['IO-HIER-001']['after'], '30-interfaces/input domains.md')
+        self.assertEqual(moves['TEL-HIER-010']['after'], '20-behavior/domains/telemetry/mechanism.md')
 
     def test_invalid_invocations_fail_without_mutating_source_or_checkout(self):
         before = self.git('status', '--porcelain')

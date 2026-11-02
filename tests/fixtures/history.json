@@ -1,5 +1,5 @@
 {
-  "pin": "950d76b022d368497c92b0d0d138f0c973c3d8a1",
+  "pin": "e7ed075d8e3fdc5171c3b95a73490bae69574693",
   "refs": {
     "invalid/conflict-markers": "afe06a091979238947408fcf0ff6379c69d5505f",
     "invalid/dangling": "ccd1d742de93c9be260248d0655b81a2d641974c",
@@ -14,6 +14,12 @@
     "scenario/conflict-side": "5c412c2575823c2dc3f7aec065672b03e1fdf67a",
     "scenario/delete-note": "f6002de747db0ed8e917305283a74b668191960c",
     "scenario/dependency-cycle": "118f00986578e9fccfd720155faa8a357b2f95eb",
+    "scenario/hierarchy-base": "2c7d5271f76058c9b28c7420310e7ac415247056",
+    "scenario/hierarchy-io": "7372896161f457124f509f69c1bd95aa11b4006e",
+    "scenario/hierarchy-main": "7afb36acb78538d1a144063176ddb2fbece077b8",
+    "scenario/hierarchy-move-split": "e7ed075d8e3fdc5171c3b95a73490bae69574693",
+    "scenario/hierarchy-octopus": "659c16641a56b217bebbfda3029106cf28a1a123",
+    "scenario/hierarchy-telemetry": "465d396ae2a528085738c6c942097a33e2f50dff",
     "scenario/known-conflict": "aef864e31a5d95c71f45e054b93184a24b82837f",
     "scenario/match-main": "760b842a226ff4f47fa19eb3b099b763f7da3e4a",
     "scenario/match-main-main": "673072b5fdb4c8628687f31f65065420c93a6ca2",
@@ -28,6 +34,7 @@
     "v0.2": "31fcc1f3d7de5d2dfbf8442b9a9b9334b84eab68",
     "v0.3": "cd1409d02166442f04b5809e5c1e3df9664c20ca",
     "v0.4": "cc179b13110176fcd973f1354a689407cbf3e9a0",
-    "v1.0": "950d76b022d368497c92b0d0d138f0c973c3d8a1"
+    "v1.0": "950d76b022d368497c92b0d0d138f0c973c3d8a1",
+    "v2.0": "e7ed075d8e3fdc5171c3b95a73490bae69574693"
   }
 }

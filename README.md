@@ -65,7 +65,10 @@ Clauses end at the next clause heading or a heading at the same/higher level;
 ordinary deeper headings remain inside a clause. Metadata may span multiple
 one-line comments. Quote values containing spaces. References use `[[ID]]`,
 `[[ID | label]]`, `[[decisions/D-001]]` or `[[path.md#CLAUSE-ID]]`.
-Fenced code is preserved but never interpreted as headings, metadata or links.
+Fenced and indented code is preserved but never interpreted as headings, metadata
+or links. HTML comments are non-authoritative except standalone NDF metadata
+comments. Code spans can cross prose line breaks; escaped reference delimiters
+remain literal. ATX headings may have up to three leading spaces and closing hashes.
 Inline-code examples do not create references or establish normative keywords.
 Conflict markers inside fenced examples are ignored. `deps` resolves ID,
 file-and-anchor, and whole-file references; directory filters respect path
@@ -129,7 +132,9 @@ records with IDs, source, relation, depth, repetition marker and verification li
 `diff A..B` retains its original `change` field and adds `categories`: added,
 deleted, modified, formatting-only, moved, deprecated and superseded (multiple
 categories can apply). The formatting rule ignores prose whitespace/wrapping and
-reordering of typed-edge targets; code whitespace is preserved. This is a
+reordering of typed-edge targets; fenced, indented and inline code whitespace is
+preserved. Census deltas use the same active-clause rules as coverage and exclude
+markers inside code examples. This is a
 syntactic classification, not a judgment about changed meaning. Metadata deltas,
 added/removed typed edges and mentions, title changes, unified body patches and
 per-clause TBD/open-option/open-question census deltas are included. Results are
@@ -155,8 +160,9 @@ outside that root are out of scope. Removed clauses appear as deletions; unrelat
 commits are omitted. The working tree is not part of `log` or `diff`.
 
 Use `log --all` to include unmerged branches reachable from local refs. A normal
-`log` includes ancestors of the selected ref only. Shallow clones only provide
-history present locally; fetch full history for complete reports. Snapshots with
+`log` includes ancestors of the selected ref only. Clause logs reject shallow repositories explicitly rather than misreporting a
+truncated boundary as a newly added clause; fetch full history first. Snapshot
+diffs remain available in shallow repositories when both commits exist locally. Snapshots with
 duplicate IDs fail explicitly rather than arbitrarily choosing one clause.
 Historical queries read Git snapshots independently of the current manifest and
 Markdown, even if the current spec directory is missing. History is deliberately simple and scans snapshots; large repositories
@@ -182,7 +188,7 @@ python3 ndf.py --root examples/chrono/spec test
 ```
 
 The [history fixture](tests/fixtures/README.md) is a real pinned Git submodule,
-backed by a tracked cloneable bundle for offline setup. It contains 28 named
+backed by a tracked cloneable bundle for offline setup. It contains 35 named
 snapshots and a realistic development graph. Integration tests use independent
 expected answers and mutate only temporary clones. Bootstrap fetches the full
 branch/tag history; it never changes global Git protocol settings. The CI runs
@@ -191,3 +197,6 @@ bootstrap before the complete suite.
 Git regressions create disposable repositories and exercise divergent edits,
 conflicting and clean merges, resolutions matching one/both parents, unmerged
 branches, deletions/restoration, file moves, and history with a broken worktree.
+
+The [second adversarial audit report](tests/ADVERSARIAL_AUDIT.md) records the
+18 distinct bugs found and fixed, their regressions, and the expanded test scope.
