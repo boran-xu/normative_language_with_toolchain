@@ -28,13 +28,22 @@ _PARSER = MarkdownIt('commonmark', {'maxNesting': 100})
 _PARSER.inline.ruler.before('link', 'ndf_reference', _reference)
 
 
+def normalize_source(text):
+    """Match CommonMark physical lines without rewriting Unicode separators."""
+    return text.removeprefix('\ufeff').replace('\r\n', '\n').replace('\r', '\n')
+
+
+def source_lines(text):
+    return normalize_source(text).split('\n')
+
+
 @lru_cache(maxsize=256)
 def tokens(text):
     # Consumers read tokens only. Caching avoids reparsing unchanged Git blobs.
-    return _PARSER.parse(text)
+    return _PARSER.parse(normalize_source(text))
 
 
-def inline_text(token, title=False):
+def inline_text(token, title=False, *, images=True, code=False):
     parts = []
     for child in token.children or []:
         if child.type in ('text', 'text_special'):
@@ -43,15 +52,15 @@ def inline_text(token, title=False):
             parts.append('\n')
         elif child.type == 'ndf_reference':
             parts.append('[[' + child.content + ']]')
-        elif title and child.type == 'code_inline':
+        elif (title or code) and child.type == 'code_inline':
             parts.append(child.markup + child.content + child.markup)
         elif title and child.type in ('em_open', 'em_close', 'strong_open', 'strong_close'):
             parts.append(child.markup)
         elif child.type == 'html_inline' and not child.content.startswith('<!--'):
             # Tags are syntax; only their text contents participate in prose.
             continue
-        elif child.type == 'image':
-            parts.append(child.content)
+        elif child.type == 'image' and images:
+            parts.append(inline_text(child, title=title, code=code))
     return ''.join(parts)
 
 
@@ -74,6 +83,25 @@ def visible(text, keep_metadata=False):
     return '\n'.join(parts)
 
 
+def inline_children(token):
+    for child in token.children or []:
+        yield child
+        if child.type == 'image':
+            yield from inline_children(child)
+
+
 def references(text):
     return [child.meta['target'] for token in inlines(text)
-            for child in token.children or [] if child.type == 'ndf_reference']
+            for child in inline_children(token) if child.type == 'ndf_reference']
+
+
+def resolution(text):
+    """Read a real top-level prose field, excluding quotes/lists/code/comments."""
+    for token in tokens(text):
+        if token.type != 'inline' or token.level != 1:
+            continue
+        value = inline_text(token, images=False, code=True)
+        match = re.search(r'^Resolution[.:][ \t]*(\S[^\n]*)$', value, flags=re.I | re.M)
+        if match:
+            return match[1].strip()
+    return None

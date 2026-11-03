@@ -1,10 +1,12 @@
 """Read heading-anchored clauses without interpreting Markdown code as metadata."""
 from dataclasses import dataclass, field
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 import json
 import re
 import shlex
-from .markdown import tokens, inline_text, references, META
+from .markdown import tokens, inline_text, references, META, normalize_source, source_lines, resolution
+from .paths import relative_path
+from .index import SpecIndex
 
 HEADING = re.compile(r'^ {0,3}(#{1,6})[ \t]+(.*?)\s*$')
 ANCHOR = re.compile(r'\{#([A-Za-z][\w.-]*)\}\s*$')
@@ -35,14 +37,15 @@ class Clause:
         return self.title, self.meta, self.body
 
     def resolution(self):
-        match = re.search(r'(?im)^\*\*Resolution[.:]?\*\*[.:]?\s*(.+)$', self.body)
-        return self.meta.get('resolution') or (match[1] if match else None)
+        return self.meta.get('resolution') or resolution(self.body)
 
     def active(self):
         return self.meta.get('status') != 'deprecated' and not any(k == 'superseded-by' for k, _ in self.edges())
 
 
 def parse(text, path):
+    text = normalize_source(text)
+    raw_lines = source_lines(text)
     clauses, current, lines = [], None, []
     def finish():
         if current:
@@ -53,14 +56,26 @@ def parse(text, path):
     parsed = tokens(text)
     for position, token in enumerate(parsed):
         if token.type == 'heading_open' and token.level == 0 and token.markup.startswith('#'):
-            headings[token.map[0]] = (int(token.tag[1:]), inline_text(parsed[position + 1], title=True).rstrip())
+            display = inline_text(parsed[position + 1], title=True).rstrip()
+            raw = HEADING.match(raw_lines[token.map[0]])
+            raw_title = re.sub(r'[ \t]+#+[ \t]*$', '', raw[2]).rstrip() if raw else ''
+            raw_title = re.sub(r'(?:[ \t]*<!--.*?-->[ \t]*)+$', '', raw_title).rstrip()
+            source_anchor = ANCHOR.search(raw_title)
+            display_anchor = ANCHOR.search(display)
+            # IDs are source syntax, not text invented by entity/escape decoding.
+            actual = source_anchor if source_anchor and display_anchor and source_anchor[1] == display_anchor[1] else None
+            if actual:
+                prefix = raw_title[:actual.start()]
+                if len(prefix) - len(prefix.rstrip('\\')) & 1:
+                    actual = None
+            headings[token.map[0]] = (int(token.tag[1:]), display, actual is not None)
         elif token.type == 'html_block' and token.level == 0 and META.fullmatch(token.content):
             metadata_lines[token.map[0]] = META.fullmatch(token.content)
-    for index, line in enumerate(text.splitlines()):
+    for index, line in enumerate(raw_lines):
         number = index + 1
         heading = headings.get(index)
         heading_text = heading[1] if heading else ''
-        anchor = ANCHOR.search(heading_text) if heading else None
+        anchor = ANCHOR.search(heading_text) if heading and heading[2] else None
         if heading and (anchor or (current and heading[0] <= current_depth)):
             finish()
             current, lines = None, []
@@ -129,39 +144,21 @@ def manifest(root):
     return value
 
 
-def relative_path(path):
-    """Canonical POSIX spelling; reject absolute paths and parent traversal."""
-    rel = PurePosixPath(path)
-    if rel.is_absolute() or '..' in rel.parts:
-        return None
-    return rel.as_posix()
-
-
 def reference_ids(target, clauses):
-    target = target.strip()
-    if any(c.id == target for c in clauses):
-        return [target]
-    path, _, anchor = target.partition('#')
-    path = relative_path(path)
-    if path is None:
-        return []
-    return sorted(c.id for c in clauses if c.path in (path, path + '.md')
-                  and (not anchor or c.id == anchor))
+    """Compatibility helper; repeated queries should reuse SpecIndex directly."""
+    return list(SpecIndex(clauses).resolve(target))
 
 
 def resolve(target, clauses, root):
-    if reference_ids(target, clauses):
-        return True
-    target = target.strip()
-    if '#' in target or ('/' not in target and not target.endswith('.md')):
-        return False
-    path = relative_path(target)
-    return path is not None and any((root / name).is_file() for name in (path, path + '.md'))
+    return SpecIndex(clauses, root=root).valid(target)
 
 
-def validate(clauses, root, config):
+def validate(clauses, root, config, *, spec=None):
     from .glossary import prose as visible_prose
     errors, warnings, index = [], [], {}
+    spec = spec if spec is not None else SpecIndex(clauses, root=root)
+    all_ids = spec.by_id
+    order = {layer: i for i, layer in enumerate(config.get('layers', ['L0', 'L1', 'L2', 'L3']))}
     for path in markdown_files(root):
         if re.search(r'(?m)^(<{7}|={7}|>{7})(?: |$)', visible_prose(path.read_text(encoding='utf-8'))):
             errors.append(f'{path.relative_to(root)}: unresolved Git conflict marker')
@@ -209,13 +206,13 @@ def validate(clauses, root, config):
         if c.meta.get('kind') == 'question' and status in {'closed', 'resolved'} and not c.resolution():
             warnings.append(f'{loc}: closed question has no resolution')
         for target in c.refs:
-            if not resolve(target, clauses, root):
+            if not spec.valid(target):
                 errors.append(f'{loc}: dangling reference {target.strip()}')
         for key in EDGE_KEYS:
             if key in c.meta and any(not part.strip() for part in c.meta[key].split(',')):
                 errors.append(f'{loc}: {key} requires nonempty clause IDs')
         for key, target in c.edges():
-            if target not in {x.id for x in clauses}:
+            if target not in all_ids:
                 errors.append(f'{loc}: dangling {key}={target}')
             if key == 'conflicts-with':
                 warnings.append(f'{loc}: known conflict with {target}')
@@ -228,8 +225,7 @@ def validate(clauses, root, config):
                 errors.append(f'{c.id}: verifies edge must originate in a verif clause')
             if key == 'refines' and target in index:
                 child, parent = c.meta.get('layer', ''), index[target].meta.get('layer', '')
-                order = list(layers)
-                if child in order and parent in order and order.index(child) <= order.index(parent):
+                if child in order and parent in order and order[child] <= order[parent]:
                     errors.append(f'{c.id}: refines must point to a lower layer: {target}')
     # Refinement must be acyclic, even when layer metadata is absent.
     for relation in ('refines', 'superseded-by'):

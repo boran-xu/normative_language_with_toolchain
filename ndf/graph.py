@@ -1,16 +1,11 @@
 """Cycle-safe traversal of typed clause relationships."""
+from .index import SpecIndex
 
 def trace(clauses, start):
-    index = {c.id: c for c in clauses}
+    spec = clauses if isinstance(clauses, SpecIndex) else SpecIndex(clauses)
+    index = spec.by_id
     if start not in index:
         raise ValueError('unknown clause ' + start)
-    children, verifiers = {}, {}
-    for c in clauses:
-        for kind, target in c.edges():
-            if kind == 'refines':
-                children.setdefault(target, []).append(c.id)
-            elif kind == 'verifies':
-                verifiers.setdefault(target, []).append(c.id)
     rows, seen = [], set()
     # Iterative DFS avoids recursion limits for large dependency graphs.
     pending = [(start, 0, None, None)]
@@ -20,13 +15,13 @@ def trace(clauses, start):
         repeated = cid in seen
         rows.append({'id': cid, 'layer': c.meta.get('layer'), 'title': c.title,
                      'depth': depth, 'source': source, 'relation': relation,
-                     'repeated': repeated, 'verified_by': sorted(verifiers.get(cid, [])),
-                     'edges': [{'type': k, 'target': t} for k, t in c.edges()]})
+                     'repeated': repeated, 'verified_by': list(spec.incoming('verifies', cid)),
+                     'edges': [{'type': k, 'target': t} for k, t in sorted(spec.typed(cid))]})
         if repeated:
             continue
         seen.add(cid)
-        successors = [('refined-by', child) for child in children.get(cid, [])]
-        successors += [('depends-on', target) for kind, target in c.edges() if kind == 'depends-on']
+        successors = [('refined-by', child) for child in spec.incoming('refines', cid)]
+        successors += [('depends-on', target) for kind, target in spec.typed(cid) if kind == 'depends-on']
         for kind, target in reversed(sorted(set(successors))):
             pending.append((target, depth + 1, cid, kind))
     return rows

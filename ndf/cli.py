@@ -4,9 +4,10 @@ from pathlib import Path
 import re
 import sys
 import uuid
-from .core import load, manifest, validate, reference_ids, relative_path
+from .core import load, manifest, validate
+from .index import SpecIndex
+from . import reports
 from .history import History, change, changelog
-from .census import census
 from .graph import trace as trace_graph, render_trace
 
 
@@ -47,12 +48,14 @@ def main(argv=None):
     try:
         root = args.root.resolve()
         if args.command == 'init':
-            if (root / 'ndf.yaml').exists():
+            if (root / 'ndf.yaml').exists() or (root / 'ndf.yaml').is_symlink():
                 raise ValueError('ndf.yaml already exists; init never overwrites a spec')
             root.mkdir(parents=True, exist_ok=True)
             for name in ('00-charter', '10-architecture', '20-behavior', '30-interfaces', '40-constraints', '50-verification', 'models', 'refs', 'decisions', 'open'):
                 (root / name).mkdir(exist_ok=True)
-            (root / 'ndf.yaml').write_text(json.dumps({'project': root.name, 'id-prefixes': ['SYS', 'VER', 'D', 'Q'], 'layers': {'L0': 'intent', 'L1': 'contract', 'L2': 'mechanism', 'L3': 'executable'}}, indent=2) + '\n')
+            with (root / 'ndf.yaml').open('x', encoding='utf-8') as stream:
+                json.dump({'project': root.name, 'id-prefixes': ['SYS', 'VER', 'D', 'Q'], 'layers': {'L0': 'intent', 'L1': 'contract', 'L2': 'mechanism', 'L3': 'executable'}}, stream, indent=2)
+                stream.write('\n')
             emit({'created': str(root)}, args.json)
             return 0
         historical = args.command in ('log', 'diff')
@@ -68,12 +71,13 @@ def main(argv=None):
             emit({'id': cid} if args.json else [cid], args.json)
             return 0
         # Historical queries remain usable even with a broken worktree.
-        errors, warnings = ([], []) if historical else validate(clauses, root, config)
+        index = SpecIndex(clauses, root=root)
+        errors, warnings = ([], []) if historical else validate(clauses, root, config, spec=index)
         if args.command == 'check':
             if args.since:
                 before = History(root).snapshot(args.since)
-                index = {c.id: c for c in clauses}
-                changed = {cid for cid in set(before) | set(index) if change(before.get(cid), index.get(cid))}
+                current = index.by_id
+                changed = {cid for cid in set(before) | set(current) if change(before.get(cid), current.get(cid))}
                 pairs = set()
                 # Include removed edges as well as current edges.
                 for c in list(before.values()) + clauses:
@@ -86,7 +90,6 @@ def main(argv=None):
         if errors:
             emit({'errors': errors}, args.json)
             return 1
-        index = {c.id: c for c in clauses}
         if args.command == 'test':
             import subprocess
             models = root / 'models'
@@ -97,45 +100,13 @@ def main(argv=None):
             from dataclasses import asdict
             emit([asdict(c) for c in clauses], True)
         elif args.command in ('coverage', 'status'):
-            links = {}
-            for c in clauses:
-                if c.active() and c.meta.get('kind') == 'verif':
-                    for key, target in c.edges():
-                        if key == 'verifies':
-                            links.setdefault(target, []).append(c.id)
-            layers = list(config.get('layers', ['L0', 'L1', 'L2', 'L3']))
-            contract_layer = layers[1] if len(layers) > 1 else None
-            must = [c.id for c in clauses if c.active() and contract_layer is not None and c.meta.get('layer') == contract_layer and c.meta.get('level') == 'must' and c.meta.get('kind') != 'info']
-            questions = [c.id for c in clauses if c.active() and c.meta.get('kind') == 'question' and c.meta.get('status', 'open') not in ('resolved', 'closed')]
-            result = {'contract_layer': contract_layer, 'L1_must': len(must), 'linked': len([cid for cid in must if cid in links]),
-                      'unverified': sorted(cid for cid in must if cid not in links),
-                      'verification_links': links, 'open_questions': questions,
-                      'TBD': [c.id for c in clauses if c.active() and (census(c)['TBD_level'] or census(c)['TBD_markers'])],
-                      'open_options': [c.id for c in clauses if c.active() and c.meta.get('kind') == 'option' and c.meta.get('level') == 'tbd'],
-                      'inline_DSE': sum(census(c)['inline_DSE'] for c in clauses),
-                      'conflicts': [{'id': c.id, 'with': target} for c in clauses if c.active() for key, target in c.edges() if key == 'conflicts-with'],
-                      'note': 'Links measure specified coverage, not implemented or passing tests.'}
-            if args.command == 'status':
-                result['questions'] = [{'id': c.id, 'status': c.meta.get('status', 'open'), 'blocks': [t for k, t in c.edges() if k == 'blocks'], 'resolution': c.resolution(), 'body': c.body} for c in clauses if c.meta.get('kind') == 'question']
-            emit(result, args.json)
+            emit(reports.coverage(index, config, include_questions=args.command == 'status'), args.json)
         elif args.command == 'options':
-            emit([{**c.meta, 'id': c.id} for c in clauses if c.meta.get('kind') == 'option'], args.json)
+            emit(reports.options(index), args.json)
         elif args.command == 'deps':
-            prefix = relative_path(args.path)
-            if prefix is None:
-                raise ValueError('dependency path must be relative to the spec root')
-            external = {c.id for c in clauses if prefix == '.' or c.path == prefix or c.path.startswith(prefix + '/')}
-            rows = set()
-            for c in clauses:
-                if c.id in external:
-                    continue
-                edges = list(c.edges())
-                edges.extend(('mention', target) for ref in c.refs for target in reference_ids(ref, clauses))
-                rows.update((c.id, key, target) for key, target in edges if target in external)
-            emit([{'id': cid, 'target': target, 'type': key, 'origin': index[target].meta.get('origin')}
-                  for cid, key, target in sorted(rows)], args.json)
+            emit(reports.dependencies(index, args.path), args.json)
         elif args.command == 'trace':
-            rows = trace_graph(clauses, args.id)
+            rows = trace_graph(index, args.id)
             emit(rows if args.json else render_trace(rows), args.json)
         elif args.command == 'log':
             emit(History(root).events(args.id, args.ref, args.all), args.json)

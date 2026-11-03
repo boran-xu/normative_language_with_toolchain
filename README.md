@@ -181,8 +181,9 @@ current-tree and historical queries. Root-directory symlinks are supported.
 Directories ending in `.md` are traversed, never read as files; Git metadata is
 excluded relative to the selected root.
 Historical queries read Git snapshots independently of the current manifest and
-Markdown, even if the current spec directory is missing. History is deliberately simple and scans snapshots; large repositories
-may benefit from a future persistent cache.
+Markdown, even if the current spec directory is missing. History batches Git objects and caches immutable trees/blobs per query. It
+does not spawn a process per file or require a persistent cache; memory use still
+scales with distinct objects and retained snapshots.
 
 ## Limits and verification
 
@@ -220,3 +221,9 @@ The [second adversarial audit report](tests/ADVERSARIAL_AUDIT.md) records the
 The [interaction audit report](tests/INTERACTION_AUDIT.md) covers the next pass,
 including the CommonMark parser replacement, bootstrap preflight checks and
 15 further defects with regressions.
+
+The [quality audit](tests/QUALITY_AUDIT.md) documents seven further correctness
+fixes and shared indexing/report modules. [Measured benchmarks](docs/PERFORMANCE.md)
+show roughly 495× faster history queries on the recorded workload and roughly
+149× faster indexed reference resolution. [Architecture](docs/ARCHITECTURE.md)
+describes the modules and their limits.

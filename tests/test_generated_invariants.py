@@ -74,7 +74,7 @@ class GeneratedInvariants(unittest.TestCase):
                 self.assertEqual(self.cli('coverage')['L1_must'], count // 4)
 
     def test_default_root_module_entrypoint_and_help_matrix(self):
-        env = dict(os.environ, PYTHONPATH=str(CLI.parent))
+        env = dict(os.environ, PYTHONPATH=os.pathsep.join(filter(None, (str(CLI.parent), os.environ.get('PYTHONPATH')))))
         direct, module = [sys.executable, str(CLI)], [sys.executable, '-m', 'ndf']
         initialized = subprocess.run(direct + ['--json', 'init'], cwd=self.root, capture_output=True, text=True, env=env)
         self.assertEqual(initialized.returncode, 0, initialized.stderr)

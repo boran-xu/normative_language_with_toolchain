@@ -1,0 +1,48 @@
+{
+  "baseline_commit": "68bb9a3",
+  "environment": {
+    "python": "3.12.3",
+    "platform": "Linux",
+    "parser": "markdown-it-py 3.0.0"
+  },
+  "history": {
+    "before": {
+      "workload": {
+        "commits": 181,
+        "files": 160
+      },
+      "seconds": 93.93517405772582,
+      "git_processes": 29509,
+      "events": 3,
+      "correct": true
+    },
+    "after": {
+      "workload": {
+        "commits": 181,
+        "files": 160
+      },
+      "seconds": 0.1896871943026781,
+      "git_processes": 8,
+      "events": 3,
+      "correct": true
+    },
+    "wall_time_ratio": 495.2109413766556,
+    "git_process_ratio": 3688.625
+  },
+  "references": {
+    "before": {
+      "clauses": 10000,
+      "lookups": 10000,
+      "seconds": 12.305865377187729,
+      "correct": true
+    },
+    "after": {
+      "clauses": 10000,
+      "lookups": 10000,
+      "seconds": 0.08285354310646653,
+      "correct": true,
+      "includes_index_construction": true
+    },
+    "wall_time_ratio": 148.52551762783074
+  }
+}
