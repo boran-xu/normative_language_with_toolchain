@@ -1,0 +1,21 @@
+{
+  "proposal_status": "Draft proposal, v0.1",
+  "references_are_verbatim": true,
+  "files": [
+    {
+      "source": "normative_language.md",
+      "bundled": "references/normative_language.md",
+      "sha256": "6adfcccd97b620e30e6a83b4ade79d4c5d9850de1ad90eab652ed6c756cf7b7a",
+      "source_commit": "09cfe646931183caee82dd913f77f516b82134df"
+    },
+    {
+      "source": "normative_language_cn.md",
+      "bundled": "references/normative_language_cn.md",
+      "sha256": "60b3b948123b6209cca31a3820c29814e265d73cb9834e1c88fee329741827b6",
+      "source_commit": "09cfe646931183caee82dd913f77f516b82134df"
+    }
+  ],
+  "tool_support_checked_against_commit": "06e562680191395965a7b22f8981e8fc1afe848c",
+  "local_tool_setup": "ndf on PATH; user-managed ~/.local/share/venvs/ndf installation",
+  "note": "The full text is preserved in both languages. Supporting operating instructions and CLI compatibility notes are separate, not edits to the proposal."
+}

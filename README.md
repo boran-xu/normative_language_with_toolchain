@@ -227,3 +227,26 @@ fixes and shared indexing/report modules. [Measured benchmarks](docs/PERFORMANCE
 show roughly 495× faster history queries on the recorded workload and roughly
 149× faster indexed reference resolution. [Architecture](docs/ARCHITECTURE.md)
 describes the modules and their limits.
+
+## Agent skill
+
+The portable [`ndf-spec` skill](skills/ndf-spec/SKILL.md) teaches the full proposal,
+not only the implemented CLI subset. It bundles byte-for-byte English and Chinese
+proposal references, a section-by-section feature map, and a separate guide to
+current `ndf` commands and remaining manual responsibilities.
+
+Copy the entire `skills/ndf-spec` directory into your agent's skill directory;
+Codex's default is `~/.codex/skills/ndf-spec`. The references must travel with
+`SKILL.md`. Invoke it explicitly as `$ndf-spec`, or let normal skill discovery
+select it for NDF work. It uses the existing `ndf` on PATH; it does not install a
+second CLI or require a different Python environment.
+
+Verify source fidelity and portable reference links after intentional updates:
+
+```sh
+python3 tools/check_ndf_skill.py
+```
+
+The provenance manifest records source revisions and hashes. Keep both proposal
+snapshots aligned with the originals when deliberately refreshing the skill;
+never silently rewrite the originals to fit current tool limitations.

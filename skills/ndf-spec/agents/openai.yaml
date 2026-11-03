@@ -1,0 +1,4 @@
+interface:
+  display_name: "NDF Specification"
+  short_description: "Apply the full Normative Description Format proposal"
+  default_prompt: "Use $ndf-spec to maintain this project’s canonical NDF specification and trace its requirements, decisions, models, and verification."
