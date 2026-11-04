@@ -31,7 +31,8 @@ third-party dependencies and also runs in CI.
 
 ## Independent forward test
 
-An independent CLI tester was given the completed skill and a realistic raw user
+Before the entrypoint simplification described below, an independent CLI tester
+was given the completed skill and a realistic raw user
 request, not the intended answer or suspected failure: create a retrying telemetry
 sender spec, retain a queue-depth option (default4, explore4/8), project the supplied
 Toy Clock rev1 §2 definition, leave an unknown acknowledgement deadline open,
@@ -70,3 +71,17 @@ canonical project state or files required by the skill.
 The source snapshot checker and generic skill validator should be rerun after
 intentional updates. A bounded successful exercise does not guarantee every
 future agent/task will interpret the methodology correctly.
+
+## Entrypoint simplification
+
+The revised `SKILL.md` keeps the operating loop and reading routes, with detailed
+methodology supplied by the verbatim proposal. It reduces the entrypoint from
+212 to 65 lines. The proposal map, CLI guide and bilingual source snapshots remain
+available in full; feature retention does not depend on repeating their contents
+in the entrypoint. Initial reading now covers §§2, 4.1–4.3 and 7, with additional
+sections selected by the task.
+
+The source/provenance/reference checker and generic skill validator pass for this
+revision. The forward test above exercised the previous entrypoint; it has not
+been repeated for the shortened version. Validation of this revision establishes
+source preservation, reference closure and skill format, not new behavioral evidence.
