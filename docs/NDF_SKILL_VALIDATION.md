@@ -76,7 +76,7 @@ future agent/task will interpret the methodology correctly.
 
 The revised `SKILL.md` keeps the operating loop and reading routes, with detailed
 methodology supplied by the verbatim proposal. It reduces the entrypoint from
-212 to 65 lines. The proposal map, CLI guide and bilingual source snapshots remain
+212 to 65 lines at that revision. The proposal map, CLI guide and bilingual source snapshots remain
 available in full; feature retention does not depend on repeating their contents
 in the entrypoint. Initial reading now covers §§2, 4.1–4.3 and 7, with additional
 sections selected by the task.
@@ -85,3 +85,9 @@ The source/provenance/reference checker and generic skill validator pass for thi
 revision. The forward test above exercised the previous entrypoint; it has not
 been repeated for the shortened version. Validation of this revision establishes
 source preservation, reference closure and skill format, not new behavioral evidence.
+
+The subsequent baseline wording clarification keeps §7's baseline + clause-ID
+work order in task context, without requiring routine hashes or working-tree
+inventories in specification clauses. §5.1 artifact baseline records remain
+appropriate for implementation runs and verification campaigns. Source-integrity,
+reference and format checks were rerun; no new forward test is claimed.

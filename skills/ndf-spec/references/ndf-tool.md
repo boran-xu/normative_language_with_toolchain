@@ -25,7 +25,7 @@ The canonical current state is the spec directory: Markdown, `ndf.yaml`, models,
 reference projections and assets. Git holds past baselines. There is no required
 database, server, allocator counter, or persistent cache to migrate. A normal clone
 is sufficient once NDF is installed. An ID is stable across versions; an ID plus a
-commit/tag identifies its exact wording. Record dirty work separately.
+commit/tag identifies its exact wording. Uncommitted edits are outside that snapshot.
 
 Inspect the local executable's help, manifest and outputs: installations can lag
 behind the repository. `ndf.yaml` can use ordinary YAML if optional PyYAML is

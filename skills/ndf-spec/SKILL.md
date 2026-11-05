@@ -30,10 +30,13 @@ the CLI supplies no automation.
 1. Find the existing spec root, `ndf.yaml`, project instructions and Git state.
    For a new spec, establish scope and charter using §4.1 and §7; use `ndf init`
    only for a new root.
-2. Identify the task's baseline commit or tag and relevant clause IDs. Starting
-   from latest is fine; record its exact revision and any existing uncommitted
-   changes. Read the charter/glossary and affected clauses with their refinement,
-   dependency, verification, decision and question context.
+2. Frame the task against a baseline and relevant clause IDs (§7). Keep the
+   baseline reference in the task context (prompt, issue or work order), using
+   a supplied tag or the starting checkout's commit. This does not require a new
+   spec entry: do not add routine commit hashes or working-tree inventories to
+   clauses. Record artifact baselines in implementation/verification records when
+   needed (§5.1). Read the charter/glossary and affected clauses with their
+   refinement, dependency, verification, decision and question context.
 3. Determine whether the work implements existing intent or changes it. Apply the
    relevant proposal sections to coordinate clauses, decisions, questions, options,
    models, acceptance criteria and implementation as needed. Compile feedback
