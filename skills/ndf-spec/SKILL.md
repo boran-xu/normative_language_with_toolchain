@@ -55,6 +55,13 @@ specification tree canonical and generated views derived. Use the original
 proposal for the detailed rules, syntax and examples; unresolved behavior remains
 explicit rather than being invented to complete an implementation.
 
+Authoring preference: state required behavior directly. Add a negative clarification
+only when it resolves a plausible ambiguity grounded in the design, distinguishes
+a real competing interpretation, or expresses a necessary prohibition/invariant.
+Avoid automatically pairing a positive statement with an unrelated “does not” or
+“MUST NOT,” or inventing a misconception just to refute it. Preserve substantive
+negative requirements; judge clarifications by their value to an implementer.
+
 ## Consult when needed
 
 - Authoring, refinement, uncertainty, design options or executable authority:
