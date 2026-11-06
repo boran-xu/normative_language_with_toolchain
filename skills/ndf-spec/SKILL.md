@@ -62,6 +62,10 @@ Avoid automatically pairing a positive statement with an unrelated “does not�
 “MUST NOT,” or inventing a misconception just to refute it. Preserve substantive
 negative requirements; judge clarifications by their value to an implementer.
 
+Use the project's glossary terms consistently in discussions with the human,
+explanations and reports. When introducing an unfamiliar term, connect it to the
+defined vocabulary; avoid inventing synonyms for established concepts.
+
 ## Consult when needed
 
 - Authoring, refinement, uncertainty, design options or executable authority:
